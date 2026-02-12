@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.helpers import entity_registry as er
 
 from .api import DeltaCoordinator, WatchUpdatesView
 from .const import DATA_COORDINATOR, DOMAIN, PLATFORMS, SERVICE_FORCE_RESYNC
 
+_LOGGER = logging.getLogger(__name__)
+
+# Unique ID suffixes from removed entity classes (cleanup on upgrade)
+_ORPHANED_SUFFIXES = ("_entity_list",)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
+    _cleanup_orphaned_entities(hass, entry)
+
     coordinator = DeltaCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
@@ -45,3 +55,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data.pop(DATA_COORDINATOR, None)
         hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
     return unload_ok
+
+
+def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove entities from previous versions that no longer exist in code."""
+    ent_reg = er.async_get(hass)
+    removed = []
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if any(entity_entry.unique_id.endswith(suffix) for suffix in _ORPHANED_SUFFIXES):
+            ent_reg.async_remove(entity_entry.entity_id)
+            removed.append(entity_entry.entity_id)
+    if removed:
+        _LOGGER.info("Cleaned up %d orphaned entities: %s", len(removed), removed)

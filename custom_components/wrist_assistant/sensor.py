@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
@@ -42,16 +43,22 @@ async def async_setup_entry(
 
     @callback
     def _check_new_watches() -> None:
+        ent_reg = er.async_get(hass)
         new_entities: list[SensorEntity] = []
         for watch_id in coordinator._sessions:
-            if watch_id not in known_watches:
-                known_watches.add(watch_id)
-                new_entities.extend([
-                    WatchLastActivitySensor(coordinator, entry, watch_id),
-                    WatchSubscribedEntitiesSensor(coordinator, entry, watch_id),
-                    WatchPollIntervalSensor(coordinator, entry, watch_id),
-                    WatchConnectedSinceSensor(coordinator, entry, watch_id),
-                ])
+            if watch_id in known_watches:
+                # Verify entities still exist in registry (user may have deleted device)
+                sentinel = f"wrist_assistant_{watch_id}_last_activity"
+                if ent_reg.async_get_entity_id("sensor", DOMAIN, sentinel) is not None:
+                    continue
+                known_watches.discard(watch_id)
+            known_watches.add(watch_id)
+            new_entities.extend([
+                WatchLastActivitySensor(coordinator, entry, watch_id),
+                WatchSubscribedEntitiesSensor(coordinator, entry, watch_id),
+                WatchPollIntervalSensor(coordinator, entry, watch_id),
+                WatchConnectedSinceSensor(coordinator, entry, watch_id),
+            ])
         if new_entities:
             async_add_entities(new_entities)
 

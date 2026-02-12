@@ -6,7 +6,7 @@ from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -26,13 +26,18 @@ async def async_setup_entry(
 
     @callback
     def _check_new_watches() -> None:
+        ent_reg = er.async_get(hass)
         new_entities: list[TextEntity] = []
         for watch_id in coordinator._sessions:
-            if watch_id not in known_watches:
-                known_watches.add(watch_id)
-                new_entities.append(
-                    WatchNameText(coordinator, entry, watch_id)
-                )
+            if watch_id in known_watches:
+                sentinel = f"wrist_assistant_{watch_id}_name"
+                if ent_reg.async_get_entity_id("text", DOMAIN, sentinel) is not None:
+                    continue
+                known_watches.discard(watch_id)
+            known_watches.add(watch_id)
+            new_entities.append(
+                WatchNameText(coordinator, entry, watch_id)
+            )
         if new_entities:
             async_add_entities(new_entities)
 
