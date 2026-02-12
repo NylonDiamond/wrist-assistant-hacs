@@ -24,23 +24,13 @@ This integration registers a single authenticated HTTP endpoint (`POST /api/watc
 5. Select category: **Integration**
 6. Click **Add**, then find "Wrist Assistant" in the integration list and install it
 7. Restart Home Assistant
-8. Add `wrist_assistant:` to your `configuration.yaml` (see below)
+8. Go to **Settings** → **Devices & Services** → **Add Integration** → search for **Wrist Assistant**
 
 ### Manual
 
 1. Copy the `custom_components/wrist_assistant` directory to your Home Assistant `<config>/custom_components/` directory
 2. Restart Home Assistant
-3. Add `wrist_assistant:` to your `configuration.yaml` (see below)
-
-## Configuration
-
-Add this to your `configuration.yaml`:
-
-```yaml
-wrist_assistant:
-```
-
-No additional options are required. Restart Home Assistant after adding.
+3. Go to **Settings** → **Devices & Services** → **Add Integration** → search for **Wrist Assistant**
 
 ## API Reference
 

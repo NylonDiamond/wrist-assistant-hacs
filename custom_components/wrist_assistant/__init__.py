@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import voluptuous as vol
-
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.typing import ConfigType
 
 from .api import DeltaCoordinator, WatchUpdatesView
 from .const import DATA_COORDINATOR, DOMAIN
 
-CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({})}, extra=vol.ALLOW_EXTRA)
 
-
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Wrist Assistant integration."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Wrist Assistant from a config entry."""
     coordinator = DeltaCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
@@ -25,5 +21,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
 
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
+    )
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    data = hass.data.get(DOMAIN)
+    if data and DATA_COORDINATOR in data:
+        data[DATA_COORDINATOR].async_shutdown()
+        data.pop(DATA_COORDINATOR, None)
     return True
