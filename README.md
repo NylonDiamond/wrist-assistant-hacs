@@ -20,7 +20,7 @@ This integration registers a single authenticated HTTP endpoint (`POST /api/watc
 1. Open HACS in your Home Assistant UI
 2. Go to **Integrations**
 3. Click the three dots menu (top right) and select **Custom repositories**
-4. Add this repository URL: `https://github.com/NylonDiamond/wrist-assistant-hacs`
+4. Add this repository URL: `https://github.com/NylonDiamond/homeassistant-wrist-assistant`
 5. Select category: **Integration**
 6. Click **Add**, then find "Wrist Assistant" in the integration list and install it
 7. Restart Home Assistant

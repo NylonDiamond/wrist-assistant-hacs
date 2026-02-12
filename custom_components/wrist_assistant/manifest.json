@@ -2,8 +2,8 @@
   "domain": "wrist_assistant",
   "name": "Wrist Assistant",
   "version": "0.1.0",
-  "documentation": "https://github.com/NylonDiamond/wrist-assistant-hacs",
-  "issue_tracker": "https://github.com/NylonDiamond/wrist-assistant-hacs/issues",
+  "documentation": "https://github.com/NylonDiamond/homeassistant-wrist-assistant",
+  "issue_tracker": "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues",
   "iot_class": "local_push",
   "codeowners": ["@NylonDiamond"]
 }
