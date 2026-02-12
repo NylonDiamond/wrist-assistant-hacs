@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DATA_COORDINATOR, DOMAIN
+
+SCAN_INTERVAL = timedelta(seconds=30)
 
 
 async def async_setup_entry(
@@ -30,6 +34,7 @@ async def async_setup_entry(
         MonitoredEntitiesSensor(coordinator, entry),
         EventsProcessedSensor(coordinator, entry),
         EventBufferUsageSensor(coordinator, entry),
+        EventsPerMinuteSensor(coordinator, entry),
     ]
     async_add_entities(global_sensors)
 
@@ -44,7 +49,8 @@ async def async_setup_entry(
                 new_entities.extend([
                     WatchLastActivitySensor(coordinator, entry, watch_id),
                     WatchSubscribedEntitiesSensor(coordinator, entry, watch_id),
-                    WatchEntityListSensor(coordinator, entry, watch_id),
+                    WatchPollIntervalSensor(coordinator, entry, watch_id),
+                    WatchConnectedSinceSensor(coordinator, entry, watch_id),
                 ])
         if new_entities:
             async_add_entities(new_entities)
@@ -53,6 +59,9 @@ async def async_setup_entry(
     entry.async_on_unload(
         coordinator.async_add_session_listener(_check_new_watches)
     )
+
+
+# --- Global sensors ---
 
 
 class _WristAssistantSensorBase(SensorEntity):
@@ -155,6 +164,24 @@ class EventBufferUsageSensor(_WristAssistantSensorBase):
         return round(len(self._coordinator._events) / MAX_EVENTS_BUFFER * 100, 1)
 
 
+class EventsPerMinuteSensor(_WristAssistantSensorBase):
+    """Rolling count of state change events in the last 60 seconds."""
+
+    _attr_name = "Events per minute"
+    _attr_icon = "mdi:chart-line"
+    _attr_native_unit_of_measurement = "events/min"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_should_poll = True
+
+    def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_events_per_minute"
+
+    @property
+    def native_value(self) -> float:
+        return self._coordinator.events_per_minute
+
+
 # --- Per-watch sensors ---
 
 
@@ -220,7 +247,7 @@ class WatchLastActivitySensor(_WatchSensorBase):
 
 
 class WatchSubscribedEntitiesSensor(_WatchSensorBase):
-    """Number of entities this watch monitors."""
+    """Number of entities this watch monitors, with entity list in attributes."""
 
     _attr_name = "Subscribed entities"
     _attr_icon = "mdi:format-list-bulleted"
@@ -240,30 +267,54 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
             return 0
         return len(session.entities)
 
-
-class WatchEntityListSensor(_WatchSensorBase):
-    """Text sensor showing entity IDs this watch monitors."""
-
-    _attr_name = "Watched entities"
-    _attr_icon = "mdi:format-list-text"
-
-    def __init__(
-        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
-    ) -> None:
-        super().__init__(coordinator, entry, watch_id)
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_entity_list"
-
-    @property
-    def native_value(self) -> str:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return ""
-        count = len(session.entities)
-        return f"{count} entities"
-
     @property
     def extra_state_attributes(self) -> dict:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
             return {}
         return {"entity_ids": sorted(session.entities)}
+
+
+class WatchPollIntervalSensor(_WatchSensorBase):
+    """Time between consecutive polls from this watch."""
+
+    _attr_name = "Poll interval"
+    _attr_icon = "mdi:timer-outline"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(coordinator, entry, watch_id)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_poll_interval"
+
+    @property
+    def native_value(self) -> float | None:
+        session = self._coordinator._sessions.get(self._watch_id)
+        if session is None or session.last_poll_interval is None:
+            return None
+        return round(session.last_poll_interval.total_seconds(), 1)
+
+
+class WatchConnectedSinceSensor(_WatchSensorBase):
+    """Timestamp of when this watch first connected in the current session."""
+
+    _attr_name = "Connected since"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:connection"
+
+    def __init__(
+        self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
+    ) -> None:
+        super().__init__(coordinator, entry, watch_id)
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_connected_since"
+
+    @property
+    def native_value(self):
+        session = self._coordinator._sessions.get(self._watch_id)
+        if session is None:
+            return None
+        return session.first_seen

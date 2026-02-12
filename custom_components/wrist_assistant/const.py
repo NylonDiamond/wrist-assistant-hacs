@@ -2,5 +2,5 @@
 
 DOMAIN = "wrist_assistant"
 DATA_COORDINATOR = "delta_coordinator"
-PLATFORMS = ["sensor", "binary_sensor"]
+PLATFORMS = ["sensor", "binary_sensor", "text"]
 SERVICE_FORCE_RESYNC = "force_resync"

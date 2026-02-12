@@ -1,14 +1,12 @@
-"""Binary sensors for Wrist Assistant per-watch sync status."""
+"""Text entities for Wrist Assistant watch naming."""
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -21,19 +19,19 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Wrist Assistant binary sensors."""
+    """Set up Wrist Assistant text entities."""
     coordinator: DeltaCoordinator = hass.data[DOMAIN][DATA_COORDINATOR]
 
     known_watches: set[str] = set()
 
     @callback
     def _check_new_watches() -> None:
-        new_entities: list[BinarySensorEntity] = []
+        new_entities: list[TextEntity] = []
         for watch_id in coordinator._sessions:
             if watch_id not in known_watches:
                 known_watches.add(watch_id)
                 new_entities.append(
-                    WatchSyncStatusSensor(coordinator, entry, watch_id)
+                    WatchNameText(coordinator, entry, watch_id)
                 )
         if new_entities:
             async_add_entities(new_entities)
@@ -44,14 +42,15 @@ async def async_setup_entry(
     )
 
 
-class WatchSyncStatusSensor(BinarySensorEntity):
-    """Binary sensor showing whether a watch has synced its entity list."""
+class WatchNameText(TextEntity):
+    """Text entity to rename a watch device."""
 
     _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Sync status"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:sync"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_name = "Name"
+    _attr_mode = TextMode.TEXT
+    _attr_native_max = 50
+    _attr_icon = "mdi:rename"
 
     def __init__(
         self,
@@ -61,41 +60,36 @@ class WatchSyncStatusSensor(BinarySensorEntity):
     ) -> None:
         self._coordinator = coordinator
         self._watch_id = watch_id
-        short_id = watch_id[:8]
-        self._attr_unique_id = f"wrist_assistant_{watch_id}_sync_status"
+        self._short_id = watch_id[:8]
+        self._attr_unique_id = f"wrist_assistant_{watch_id}_name"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"watch_{watch_id}")},
-            name=f"Watch {short_id}",
+            name=f"Watch {self._short_id}",
             manufacturer="Wrist Assistant",
             model="Apple Watch",
             via_device=(DOMAIN, entry.entry_id),
         )
 
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(
-            self._coordinator.async_add_session_listener(
-                self._handle_update
-            )
+    @property
+    def native_value(self) -> str:
+        dev_reg = dr.async_get(self.hass)
+        device = dev_reg.async_get_device(
+            identifiers={(DOMAIN, f"watch_{self._watch_id}")}
         )
+        if device and device.name_by_user:
+            return device.name_by_user
+        return f"Watch {self._short_id}"
 
-    @callback
-    def _handle_update(self) -> None:
+    async def async_set_value(self, value: str) -> None:
+        """Update the device name in the device registry."""
+        dev_reg = dr.async_get(self.hass)
+        device = dev_reg.async_get_device(
+            identifiers={(DOMAIN, f"watch_{self._watch_id}")}
+        )
+        if device:
+            dev_reg.async_update_device(device.id, name_by_user=value)
         self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
         return self._watch_id in self._coordinator._sessions
-
-    @property
-    def is_on(self) -> bool | None:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return None
-        return session.entities_synced
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return {}
-        return {"config_hash": session.config_hash}
