@@ -1,4 +1,4 @@
 """Constants for Wrist Assistant delta API integration."""
 
-DOMAIN = "halights_watch"
+DOMAIN = "wrist_assistant"
 DATA_COORDINATOR = "delta_coordinator"

@@ -1,6 +1,6 @@
 {
-  "domain": "halights_watch",
-  "name": "Wrist Assistant Delta API",
+  "domain": "wrist_assistant",
+  "name": "Wrist Assistant",
   "version": "0.1.0",
   "documentation": "https://github.com/NylonDiamond/wrist-assistant-hacs",
   "issue_tracker": "https://github.com/NylonDiamond/wrist-assistant-hacs/issues",

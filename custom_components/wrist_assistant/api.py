@@ -303,7 +303,7 @@ class WatchUpdatesView(HomeAssistantView):
     """Authenticated long-poll endpoint for watch delta updates."""
 
     url = "/api/watch/updates"
-    name = "api:halights_watch_updates"
+    name = "api:wrist_assistant_updates"
     requires_auth = True
 
     def __init__(self, coordinator: DeltaCoordinator) -> None:
