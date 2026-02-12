@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
@@ -136,6 +136,18 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase):
         return sum(
             len(s.entities) for s in self._coordinator._sessions.values()
         )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        dev_reg = dr.async_get(self.hass)
+        per_watch: dict[str, int] = {}
+        for wid, session in self._coordinator._sessions.items():
+            device = dev_reg.async_get_device(
+                identifiers={(DOMAIN, f"watch_{wid}")}
+            )
+            name = device.name if device else f"Watch {wid[:8]}"
+            per_watch[name] = len(session.entities)
+        return {"per_watch": per_watch}
 
 
 class EventsProcessedSensor(_WristAssistantSensorBase):
@@ -279,7 +291,11 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
             return {}
-        return {"entity_ids": sorted(session.entities)}
+        entities: dict[str, str] = {}
+        for eid in sorted(session.entities):
+            state = self.hass.states.get(eid)
+            entities[eid] = state.name if state else eid
+        return {"entities": entities}
 
 
 class WatchPollIntervalSensor(_WatchSensorBase):
