@@ -20,7 +20,7 @@ MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 55
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
-SESSION_TTL = timedelta(hours=1)
+SESSION_TTL = timedelta(minutes=5)
 
 
 @dataclass(slots=True)
@@ -179,13 +179,37 @@ class DeltaCoordinator:
 
         deadline = self.hass.loop.time() + timeout
         observed_generation = self._generation
-        while True:
-            remaining = deadline - self.hass.loop.time()
-            if remaining <= 0:
-                return 204, None
+        try:
+            while True:
+                remaining = deadline - self.hass.loop.time()
+                if remaining <= 0:
+                    return 204, None
 
-            if self._generation != observed_generation:
+                if self._generation != observed_generation:
+                    observed_generation = self._generation
+                    events, next_cursor = self._collect_events(
+                        since_cursor=since_cursor,
+                        entities=session.entities,
+                        limit=MAX_EVENTS_PER_RESPONSE,
+                    )
+                    if events:
+                        return 200, self._response_payload(
+                            events=events,
+                            next_cursor=str(next_cursor),
+                            need_entities=False,
+                            resync_required=False,
+                        )
+                    since_cursor = next_cursor
+                    continue
+
+                try:
+                    await asyncio.wait_for(self._generation_event.wait(), timeout=remaining)
+                except TimeoutError:
+                    return 204, None
+
+                self._generation_event.clear()
                 observed_generation = self._generation
+
                 events, next_cursor = self._collect_events(
                     since_cursor=since_cursor,
                     entities=session.entities,
@@ -199,29 +223,10 @@ class DeltaCoordinator:
                         resync_required=False,
                     )
                 since_cursor = next_cursor
-                continue
-
-            try:
-                await asyncio.wait_for(self._generation_event.wait(), timeout=remaining)
-            except TimeoutError:
-                return 204, None
-
-            self._generation_event.clear()
-            observed_generation = self._generation
-
-            events, next_cursor = self._collect_events(
-                since_cursor=since_cursor,
-                entities=session.entities,
-                limit=MAX_EVENTS_PER_RESPONSE,
-            )
-            if events:
-                return 200, self._response_payload(
-                    events=events,
-                    next_cursor=str(next_cursor),
-                    need_entities=False,
-                    resync_required=False,
-                )
-            since_cursor = next_cursor
+        except asyncio.CancelledError:
+            self._sessions.pop(watch_id, None)
+            self._fire_session_callbacks()
+            raise
 
     @callback
     def _handle_state_changed(self, event: Event) -> None:
