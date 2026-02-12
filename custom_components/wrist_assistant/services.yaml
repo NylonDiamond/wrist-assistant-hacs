@@ -1,0 +1,5 @@
+force_resync:
+  name: Force resync
+  description: >-
+    Clear all watch sessions, forcing every connected watch to perform
+    a full state refresh on its next poll.

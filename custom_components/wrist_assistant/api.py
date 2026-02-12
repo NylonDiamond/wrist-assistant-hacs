@@ -53,9 +53,27 @@ class DeltaCoordinator:
         self._cursor = 0
         self._generation = 0
         self._generation_event: asyncio.Event = asyncio.Event()
+        self._session_callbacks: list[callback] = []
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
+
+    @callback
+    def async_add_session_listener(self, cb: callback) -> callback:
+        """Register a callback fired when sessions change. Returns unsubscribe."""
+        self._session_callbacks.append(cb)
+
+        @callback
+        def _unsub() -> None:
+            self._session_callbacks.remove(cb)
+
+        return _unsub
+
+    @callback
+    def _fire_session_callbacks(self) -> None:
+        """Notify all session listeners."""
+        for cb in self._session_callbacks:
+            cb()
 
     @callback
     def async_shutdown(self) -> None:
@@ -63,6 +81,12 @@ class DeltaCoordinator:
         if self._unsub_state_changed is not None:
             self._unsub_state_changed()
             self._unsub_state_changed = None
+
+    @callback
+    def async_force_resync(self) -> None:
+        """Clear all sessions, forcing watches to do a full state refresh."""
+        self._sessions.clear()
+        self._fire_session_callbacks()
 
     async def handle_poll(
         self,
@@ -75,21 +99,28 @@ class DeltaCoordinator:
         """Handle a single long-poll request."""
         self._prune_sessions()
         session = self._sessions.get(watch_id)
-        if session is None:
+        is_new_session = session is None
+        if is_new_session:
             session = WatchSession(watch_id=watch_id)
             self._sessions[watch_id] = session
 
         session.last_seen = dt_util.utcnow()
+        session_changed = is_new_session
 
         if entities is not None:
             session.entities = {entity_id for entity_id in entities if isinstance(entity_id, str)}
             session.config_hash = config_hash
             session.entities_synced = True
+            session_changed = True
         elif session.config_hash != config_hash:
             # Watch config changed, ask client to send the latest entity list.
             session.config_hash = config_hash
             session.entities.clear()
             session.entities_synced = False
+            session_changed = True
+
+        if session_changed:
+            self._fire_session_callbacks()
 
         if not session.entities_synced:
             return 200, self._response_payload(
@@ -251,6 +282,8 @@ class DeltaCoordinator:
         ]
         for watch_id in expired:
             self._sessions.pop(watch_id, None)
+        if expired:
+            self._fire_session_callbacks()
 
     @staticmethod
     def _response_payload(
