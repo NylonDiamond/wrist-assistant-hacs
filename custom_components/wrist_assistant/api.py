@@ -145,6 +145,17 @@ class DeltaCoordinator:
                 resync_required=False,
             )
 
+        # When since is nil, the client is requesting a full state snapshot.
+        # Fetch current state directly from HA's state machine (in-memory, instant).
+        if since is None or since == "":
+            snapshot_events = self._snapshot_current_state(session.entities)
+            return 200, self._response_payload(
+                events=snapshot_events,
+                next_cursor=str(self._cursor),
+                need_entities=False,
+                resync_required=False,
+            )
+
         since_cursor, invalid_since = self._parse_since(
             since=since, default_cursor=self._cursor
         )
@@ -254,6 +265,28 @@ class DeltaCoordinator:
         self._generation += 1
         self._generation_event.set()
 
+    def _snapshot_current_state(
+        self, entities: set[str]
+    ) -> list[dict[str, Any]]:
+        """Build a full state snapshot from HA's state machine for the given entities."""
+        snapshot: list[dict[str, Any]] = []
+        for entity_id in entities:
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            snapshot.append(
+                {
+                    "entity_id": state.entity_id,
+                    "state": state.state,
+                    "new_state": self._state_to_payload(state),
+                    "context_id": (
+                        state.context.id if state.context is not None else None
+                    ),
+                    "last_updated": state.last_updated.isoformat(),
+                }
+            )
+        return snapshot
+
     def _collect_events(
         self, since_cursor: int, entities: set[str], limit: int
     ) -> tuple[list[dict[str, Any]], int]:
@@ -276,7 +309,16 @@ class DeltaCoordinator:
         return [], since_cursor
 
     def _is_stale_cursor(self, since_cursor: int) -> bool:
-        """Return True if requested cursor is older than retained history."""
+        """Return True if requested cursor is out of range.
+
+        Covers two cases:
+        - Cursor is older than the oldest retained event (buffer overflow).
+        - Cursor is ahead of the current server cursor (HA restarted and
+          the coordinator's cursor reset to 0 while the watch kept its old
+          cursor from a previous instance).
+        """
+        if since_cursor > self._cursor:
+            return True
         if not self._events:
             return False
         oldest_cursor = self._events[0].cursor
