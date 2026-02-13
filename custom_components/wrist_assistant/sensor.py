@@ -45,7 +45,7 @@ async def async_setup_entry(
     def _check_new_watches() -> None:
         ent_reg = er.async_get(hass)
         new_entities: list[SensorEntity] = []
-        for watch_id in coordinator._sessions:
+        for watch_id in coordinator.real_sessions:
             if watch_id in known_watches:
                 # Verify entities still exist in registry (user may have deleted device)
                 sentinel = f"wrist_assistant_{watch_id}_last_activity"
@@ -116,7 +116,7 @@ class ActiveWatchesSensor(_WristAssistantSensorBase):
 
     @property
     def native_value(self) -> int:
-        return len(self._coordinator._sessions)
+        return len(self._coordinator.real_sessions)
 
 
 class MonitoredEntitiesSensor(_WristAssistantSensorBase):
@@ -134,14 +134,14 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase):
     @property
     def native_value(self) -> int:
         return sum(
-            len(s.entities) for s in self._coordinator._sessions.values()
+            len(s.entities) for s in self._coordinator.real_sessions.values()
         )
 
     @property
     def extra_state_attributes(self) -> dict:
         dev_reg = dr.async_get(self.hass)
         per_watch: dict[str, int] = {}
-        for wid, session in self._coordinator._sessions.items():
+        for wid, session in self._coordinator.real_sessions.items():
             device = dev_reg.async_get_device(
                 identifiers={(DOMAIN, f"watch_{wid}")}
             )

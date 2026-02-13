@@ -31,7 +31,7 @@ async def async_setup_entry(
     def _check_new_watches() -> None:
         ent_reg = er.async_get(hass)
         new_entities: list[BinarySensorEntity] = []
-        for watch_id in coordinator._sessions:
+        for watch_id in coordinator.real_sessions:
             if watch_id in known_watches:
                 sentinel = f"wrist_assistant_{watch_id}_sync_status"
                 if ent_reg.async_get_entity_id("binary_sensor", DOMAIN, sentinel) is not None:

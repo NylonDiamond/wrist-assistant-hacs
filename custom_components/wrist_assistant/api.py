@@ -293,6 +293,15 @@ class DeltaCoordinator:
             return 0, True
         return max(cursor, 0), False
 
+    @property
+    def real_sessions(self) -> dict[str, "WatchSession"]:
+        """Return sessions excluding diagnostic probes."""
+        return {
+            wid: s
+            for wid, s in self._sessions.items()
+            if not wid.startswith("__") or not wid.endswith("__")
+        }
+
     def _prune_sessions(self) -> None:
         """Drop idle watch sessions."""
         cutoff = dt_util.utcnow() - SESSION_TTL
