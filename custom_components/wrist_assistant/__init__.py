@@ -7,7 +7,8 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .api import DeltaCoordinator, WatchUpdatesView
 from .const import DATA_COORDINATOR, DOMAIN, PLATFORMS, SERVICE_FORCE_RESYNC
@@ -21,7 +22,6 @@ _ORPHANED_SUFFIXES = ("_entity_list",)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     _cleanup_orphaned_entities(hass, entry)
-    _cleanup_diagnostic_devices(hass, entry)
 
     coordinator = DeltaCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})
@@ -75,21 +75,3 @@ def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
             removed.append(entity_entry.entity_id)
     if removed:
         _LOGGER.info("Cleaned up %d orphaned entities: %s", len(removed), removed)
-
-
-def _cleanup_diagnostic_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove devices created by old diagnostic probes (diagnostics-* watch IDs)."""
-    dev_reg = dr.async_get(hass)
-    ent_reg = er.async_get(hass)
-    removed = []
-    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
-        for _, identifier in device.identifiers:
-            if isinstance(identifier, str) and identifier.startswith("watch_diagnostics-"):
-                # Remove all entities for this device first
-                for entity_entry in er.async_entries_for_device(ent_reg, device.id):
-                    ent_reg.async_remove(entity_entry.entity_id)
-                dev_reg.async_remove_device(device.id)
-                removed.append(device.name or identifier)
-                break
-    if removed:
-        _LOGGER.info("Cleaned up %d diagnostic watch devices: %s", len(removed), removed)
