@@ -7,5 +7,5 @@
   "documentation": "https://github.com/NylonDiamond/homeassistant-wrist-assistant",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues",
-  "version": "0.3.5"
+  "version": "0.4.1"
 }

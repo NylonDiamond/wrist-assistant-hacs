@@ -4,3 +4,38 @@ force_resync:
     Clear all watch sessions, forcing every connected watch to perform
     a full state refresh on its next poll.
   fields: {}
+
+create_pairing_code:
+  name: Create pairing code
+  description: >-
+    Generate a one-time QR payload for Wrist Assistant app sign-in. The
+    response includes a `pairing_uri` value that should be encoded as a QR code.
+    Redeeming the code issues a long-lived access token.
+  fields:
+    local_url:
+      name: Local URL
+      description: >-
+        Optional local Home Assistant URL to embed for on-LAN usage.
+        Defaults to Home Assistant Internal URL if configured.
+      example: http://homeassistant.local:8123
+      selector:
+        text:
+    remote_url:
+      name: Remote URL
+      description: >-
+        Optional external URL to embed for remote usage.
+        Defaults to Home Assistant External URL if configured.
+      example: https://ha.example.com
+      selector:
+        text:
+    lifespan_days:
+      name: Token lifespan days
+      description: >-
+        Lifespan for the long-lived access token created when the QR code is redeemed.
+        Default is 3650 (10 years).
+      example: 3650
+      selector:
+        number:
+          min: 1
+          max: 36500
+          mode: box

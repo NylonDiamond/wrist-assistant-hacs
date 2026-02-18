@@ -90,6 +90,46 @@ Authenticated long-poll endpoint. Requires a valid Home Assistant long-lived acc
 
 **`200` with `need_entities: true`** — Server needs the entity list. Client should resend the request with the `entities` array populated.
 
+### `POST /api/wrist_assistant/pairing/redeem`
+
+Unauthenticated one-time code redemption endpoint used by QR setup flow.
+
+#### Request body
+
+```json
+{
+  "pairing_code": "kV2..."
+}
+```
+
+#### Response body
+
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "Bearer",
+  "auth_mode": "manual_token",
+  "expires_in": 315360000,
+  "home_assistant_url": "https://ha.example.com",
+  "local_url": "http://homeassistant.local:8123",
+  "remote_url": "https://ha.example.com"
+}
+```
+
+### `wrist_assistant.create_pairing_code` service
+
+Creates a short-lived one-time pairing code and returns a payload suitable for QR generation.
+
+#### Service response fields
+
+- `pairing_code` — one-time code (expires in 10 minutes)
+- `pairing_uri` — payload to encode as QR, e.g. `wristassistant://pair?...`
+- `expires_at` — UTC expiration timestamp
+- `lifespan_days` — long-lived token lifespan (default 3650 days)
+- `home_assistant_url` / `local_url` / `remote_url` — URLs included in pairing payload
+
+Use this from **Developer Tools -> Actions**, then encode `pairing_uri` as a QR code and scan it from Wrist Assistant's **Sign in -> Scan QR** path.
+
 ## Wrist Assistant App
 
 This integration is the server-side component for [Wrist Assistant](https://github.com/NylonDiamond/ha-watch), an Apple Watch app for controlling Home Assistant entities. In the watch app settings, set the update mode to **Auto** or **Delta** to use this endpoint.

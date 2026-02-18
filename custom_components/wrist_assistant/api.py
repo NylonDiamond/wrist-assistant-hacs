@@ -6,10 +6,13 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import secrets
 from typing import Any
+from urllib.parse import urlencode
 
 from aiohttp.web import Request, Response
 
+from homeassistant.auth import models as auth_models
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, State, callback
@@ -21,6 +24,10 @@ MAX_TIMEOUT_SECONDS = 55
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
+PAIRING_CODE_TTL = timedelta(minutes=10)
+PAIRING_CLIENT_ID = "https://home-assistant.io/iOS/dev-auth"
+PAIRING_CLIENT_NAME = "Wrist Assistant QR Pairing"
+PAIRING_DEFAULT_LIFESPAN_DAYS = 3650
 
 
 @dataclass(slots=True)
@@ -43,6 +50,18 @@ class DeltaEvent:
     cursor: int
     entity_id: str
     payload: dict[str, Any]
+
+
+@dataclass(slots=True)
+class PairingSession:
+    """Single-use QR pairing payload."""
+
+    code: str
+    refresh_token_id: str
+    home_assistant_url: str
+    local_url: str
+    remote_url: str
+    expires_at: datetime
 
 
 class DeltaCoordinator:
@@ -404,6 +423,108 @@ class DeltaCoordinator:
         return str(value)
 
 
+class PairingCoordinator:
+    """Issues and redeems short-lived one-time pairing codes."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self._sessions: dict[str, PairingSession] = {}
+
+    async def async_create_pairing_code(
+        self,
+        user: auth_models.User,
+        *,
+        home_assistant_url: str,
+        local_url: str,
+        remote_url: str,
+        lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
+    ) -> dict[str, Any]:
+        """Create a one-time code and return a QR payload URI."""
+        self._prune_expired()
+
+        code = secrets.token_urlsafe(24)
+        client_name = f"{PAIRING_CLIENT_NAME} {code[:8]}"
+        refresh_token = await self.hass.auth.async_create_refresh_token(
+            user=user,
+            client_id=PAIRING_CLIENT_ID,
+            client_name=client_name,
+            token_type=auth_models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN,
+            access_token_expiration=timedelta(days=lifespan_days),
+        )
+        expires_at = dt_util.utcnow() + PAIRING_CODE_TTL
+
+        self._sessions[code] = PairingSession(
+            code=code,
+            refresh_token_id=refresh_token.id,
+            home_assistant_url=home_assistant_url,
+            local_url=local_url,
+            remote_url=remote_url,
+            expires_at=expires_at,
+        )
+
+        uri_query = urlencode({"code": code, "base_url": home_assistant_url})
+        return {
+            "pairing_code": code,
+            "pairing_uri": f"wristassistant://pair?{uri_query}",
+            "expires_at": expires_at.isoformat(),
+            "lifespan_days": lifespan_days,
+            "home_assistant_url": home_assistant_url,
+            "local_url": local_url,
+            "remote_url": remote_url,
+        }
+
+    def async_redeem_pairing_code(
+        self, code: str, remote_ip: str | None
+    ) -> dict[str, Any] | None:
+        """Redeem a one-time pairing code and return OAuth credentials."""
+        self._prune_expired()
+
+        session = self._sessions.pop(code, None)
+        if session is None:
+            return None
+
+        refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
+        if refresh_token is None:
+            return None
+
+        access_token = self.hass.auth.async_create_access_token(
+            refresh_token,
+            remote_ip=remote_ip,
+        )
+        expires_in = int(refresh_token.access_token_expiration.total_seconds())
+        return {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "auth_mode": "manual_token",
+            "expires_in": expires_in,
+            "home_assistant_url": session.home_assistant_url,
+            "local_url": session.local_url,
+            "remote_url": session.remote_url,
+        }
+
+    @callback
+    def async_shutdown(self) -> None:
+        """Revoke all unused pending pairing tokens."""
+        for session in self._sessions.values():
+            refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
+            if refresh_token is not None:
+                self.hass.auth.async_remove_refresh_token(refresh_token)
+        self._sessions.clear()
+
+    @callback
+    def _prune_expired(self) -> None:
+        """Revoke and remove expired unredeemed pairing sessions."""
+        now = dt_util.utcnow()
+        expired_codes = [
+            code for code, session in self._sessions.items() if session.expires_at <= now
+        ]
+        for code in expired_codes:
+            session = self._sessions.pop(code)
+            refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
+            if refresh_token is not None:
+                self.hass.auth.async_remove_refresh_token(refresh_token)
+
+
 class WatchUpdatesView(HomeAssistantView):
     """Authenticated long-poll endpoint for watch delta updates."""
 
@@ -463,3 +584,37 @@ class WatchUpdatesView(HomeAssistantView):
         if body is None:
             return Response(status=status)
         return self.json(body, status_code=status)
+
+
+class PairingRedeemView(HomeAssistantView):
+    """Unauthenticated endpoint that exchanges pairing code for OAuth credentials."""
+
+    url = "/api/wrist_assistant/pairing/redeem"
+    name = "api:wrist_assistant_pairing_redeem"
+    requires_auth = False
+
+    def __init__(self, pairing: PairingCoordinator) -> None:
+        self._pairing = pairing
+
+    async def post(self, request: Request) -> Response:
+        """Redeem one-time pairing code."""
+        try:
+            payload = await request.json()
+        except ValueError:
+            return self.json_message("Invalid JSON body", status_code=400)
+
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object body", status_code=400)
+
+        pairing_code = payload.get("pairing_code")
+        if not isinstance(pairing_code, str) or not pairing_code:
+            return self.json_message("pairing_code is required", status_code=400)
+
+        token_payload = self._pairing.async_redeem_pairing_code(
+            pairing_code,
+            remote_ip=request.remote,
+        )
+        if token_payload is None:
+            return self.json_message("Invalid or expired pairing code", status_code=400)
+
+        return self.json(token_payload, status_code=200)
