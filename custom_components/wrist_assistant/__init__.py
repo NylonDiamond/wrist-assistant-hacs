@@ -23,6 +23,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import network
 
 from .api import (
+    PAIRING_CLIENT_ID,
     DeltaCoordinator,
     PairingCoordinator,
     PairingQRCodeView,
@@ -64,9 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
-    hass.http.register_view(WatchUpdatesView(coordinator))
-    hass.http.register_view(PairingRedeemView(pairing_coordinator))
-    hass.http.register_view(PairingQRCodeView(pairing_coordinator))
+    hass.http.register_view(WatchUpdatesView())
+    hass.http.register_view(PairingRedeemView())
+    hass.http.register_view(PairingQRCodeView())
+
+    # Revoke orphaned pairing refresh tokens from previous runs that were
+    # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
+    await _cleanup_orphaned_pairing_tokens(hass, pairing_coordinator)
 
     @callback
     def _handle_stop(_event) -> None:
@@ -96,6 +101,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         remote_url=remote_url,
         lifespan_days=3650,
     )
+
+    @callback
+    def _on_active_pairing_changed() -> None:
+        active = pairing_coordinator.active_payload
+        if active is not None:
+            _show_pairing_notification(hass, entry, active)
+
+    unsub_pairing_listener = pairing_coordinator.async_add_active_listener(
+        _on_active_pairing_changed
+    )
+    entry.async_on_unload(unsub_pairing_listener)
 
     if default_user and home_assistant_url:
         payload = await pairing_coordinator.async_refresh_active_pairing(
@@ -202,7 +218,9 @@ def _sanitize_base_url(value: str | None) -> str:
         return ""
 
     if "://" not in trimmed:
-        trimmed = f"https://{trimmed}"
+        # Default to http:// for local-looking hostnames to avoid silently
+        # upgrading plain-HTTP HA instances to unreachable HTTPS URLs.
+        trimmed = f"http://{trimmed}"
 
     try:
         parsed = cv.url(trimmed)
@@ -238,7 +256,40 @@ async def _resolve_pairing_user(hass: HomeAssistant, user_id: str | None):
     for user in await hass.auth.async_get_users():
         if user.is_owner and user.is_active:
             return user
+    _LOGGER.warning(
+        "No active owner user found for Wrist Assistant pairing; "
+        "QR pairing will not be available until an owner user exists"
+    )
     return None
+
+
+async def _cleanup_orphaned_pairing_tokens(
+    hass: HomeAssistant, pairing: PairingCoordinator
+) -> None:
+    """Revoke leftover pairing refresh tokens from previous runs.
+
+    When HA crashes or is killed, shutdown cleanup never runs, leaving
+    orphaned long-lived tokens in the auth system. Identify them by
+    client_id and client_name prefix, then revoke any that are not
+    tracked by the current PairingCoordinator.
+    """
+    active_token_ids = pairing.tracked_refresh_token_ids
+    revoked = 0
+    for user in await hass.auth.async_get_users():
+        for token in list(user.refresh_tokens.values()):
+            if (
+                token.client_id == PAIRING_CLIENT_ID
+                and token.client_name
+                and token.client_name.startswith("Wrist Assistant QR Pairing")
+                and token.id not in active_token_ids
+            ):
+                await hass.auth.async_remove_refresh_token(token)
+                revoked += 1
+    if revoked:
+        _LOGGER.info(
+            "Revoked %d orphaned Wrist Assistant pairing token(s) from previous runs",
+            revoked,
+        )
 
 
 def _show_pairing_notification(

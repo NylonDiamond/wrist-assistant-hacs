@@ -21,6 +21,8 @@ from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
+from .const import DATA_COORDINATOR, DATA_PAIRING_COORDINATOR, DOMAIN
+
 DEFAULT_TIMEOUT_SECONDS = 45
 MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 55
@@ -619,6 +621,11 @@ class PairingCoordinator:
         self._sessions.pop(code, None)
         return token_payload
 
+    @property
+    def tracked_refresh_token_ids(self) -> set[str]:
+        """Return refresh token IDs currently tracked by active sessions."""
+        return {s.refresh_token_id for s in self._sessions.values()}
+
     @callback
     def async_code_was_active(self, code: str) -> bool:
         """Return whether redeemed code was the active QR code."""
@@ -710,14 +717,15 @@ class WatchUpdatesView(HomeAssistantView):
     name = "api:wrist_assistant_updates"
     requires_auth = True
 
-    def __init__(self, coordinator: DeltaCoordinator) -> None:
-        self._coordinator = coordinator
+    @property
+    def _coordinator(self) -> DeltaCoordinator:
+        return self.hass.data[DOMAIN][DATA_COORDINATOR]
 
     async def post(self, request: Request) -> Response:
         """Handle delta update poll request."""
         try:
             payload = await request.json()
-        except ValueError:
+        except (ValueError, UnicodeDecodeError):
             return self.json_message("Invalid JSON body", status_code=400)
 
         if not isinstance(payload, dict):
@@ -771,14 +779,15 @@ class PairingRedeemView(HomeAssistantView):
     name = "api:wrist_assistant_pairing_redeem"
     requires_auth = False
 
-    def __init__(self, pairing: PairingCoordinator) -> None:
-        self._pairing = pairing
+    @property
+    def _pairing(self) -> PairingCoordinator:
+        return self.hass.data[DOMAIN][DATA_PAIRING_COORDINATOR]
 
     async def post(self, request: Request) -> Response:
         """Redeem one-time pairing code."""
         try:
             payload = await request.json()
-        except ValueError:
+        except (ValueError, UnicodeDecodeError):
             return self.json_message("Invalid JSON body", status_code=400)
 
         if not isinstance(payload, dict):
@@ -810,16 +819,6 @@ class PairingRedeemView(HomeAssistantView):
             return self.json_message("Internal pairing redemption error", status_code=500)
         if token_payload is None:
             _LOGGER.warning("Pairing code invalid/expired code=%s", code_hint)
-            async def _refresh_after_invalid() -> None:
-                try:
-                    await self._pairing.async_refresh_active_pairing_default()
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception(
-                        "Failed to refresh active pairing after invalid redeem code=%s",
-                        code_hint,
-                    )
-
-            self.hass.async_create_task(_refresh_after_invalid())
             return self.json_message("Invalid or expired pairing code", status_code=400)
         _LOGGER.info("Pairing redeem success code=%s", code_hint)
 
@@ -842,8 +841,9 @@ class PairingQRCodeView(HomeAssistantView):
     name = "api:wrist_assistant_pairing_qr"
     requires_auth = True
 
-    def __init__(self, pairing: PairingCoordinator) -> None:
-        self._pairing = pairing
+    @property
+    def _pairing(self) -> PairingCoordinator:
+        return self.hass.data[DOMAIN][DATA_PAIRING_COORDINATOR]
 
     async def get(self, request: Request) -> Response:
         """Return current pairing QR image."""
