@@ -80,21 +80,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     default_user = await _resolve_pairing_user(hass, None)
-    local_url = _sanitize_base_url(hass.config.internal_url)
-    remote_url = _sanitize_base_url(hass.config.external_url)
+    local_url = _sanitize_base_url(hass.config.internal_url) or _discover_base_url(
+        hass, prefer_external=False
+    )
+    remote_url = _sanitize_base_url(hass.config.external_url) or _discover_base_url(
+        hass, prefer_external=True
+    )
     home_assistant_url = remote_url or local_url
     if not home_assistant_url:
-        try:
-            home_assistant_url = _sanitize_base_url(
-                network.get_url(
-                    hass,
-                    prefer_external=True,
-                    allow_ip=True,
-                    require_ssl=False,
-                )
-            )
-        except HomeAssistantError:
-            home_assistant_url = ""
+        home_assistant_url = _discover_base_url(hass, prefer_external=True)
     pairing_coordinator.async_configure_defaults(
         user_id=default_user.id if default_user else None,
         home_assistant_url=home_assistant_url,
@@ -123,22 +117,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if user is None:
             raise HomeAssistantError("Unable to resolve an active Home Assistant user for pairing.")
 
-        local_url = _sanitize_base_url(call.data.get("local_url") or hass.config.internal_url)
-        remote_url = _sanitize_base_url(call.data.get("remote_url") or hass.config.external_url)
+        requested_local_url = _sanitize_base_url(call.data.get("local_url"))
+        local_url = requested_local_url or _sanitize_base_url(
+            hass.config.internal_url
+        ) or _discover_base_url(hass, prefer_external=False)
+        requested_remote_url = _sanitize_base_url(call.data.get("remote_url"))
+        remote_url = requested_remote_url or _sanitize_base_url(
+            hass.config.external_url
+        ) or _discover_base_url(hass, prefer_external=True)
         lifespan_days = int(call.data.get("lifespan_days", 3650))
         home_assistant_url = remote_url or local_url
         if not home_assistant_url:
-            try:
-                home_assistant_url = _sanitize_base_url(
-                    network.get_url(
-                        hass,
-                        prefer_external=True,
-                        allow_ip=True,
-                        require_ssl=False,
-                    )
-                )
-            except HomeAssistantError:
-                home_assistant_url = ""
+            home_assistant_url = _discover_base_url(hass, prefer_external=True)
         if not home_assistant_url:
             raise HomeAssistantError(
                 "Set local_url/remote_url in the service call or configure internal/external URL in Home Assistant."
@@ -222,6 +212,20 @@ def _sanitize_base_url(value: str | None) -> str:
         return ""
 
     return parsed.rstrip("/")
+
+
+def _discover_base_url(hass: HomeAssistant, *, prefer_external: bool) -> str:
+    """Best-effort discover a reachable Home Assistant base URL."""
+    try:
+        discovered = network.get_url(
+            hass,
+            prefer_external=prefer_external,
+            allow_ip=True,
+            require_ssl=False,
+        )
+    except HomeAssistantError:
+        return ""
+    return _sanitize_base_url(discovered)
 
 
 async def _resolve_pairing_user(hass: HomeAssistant, user_id: str | None):
