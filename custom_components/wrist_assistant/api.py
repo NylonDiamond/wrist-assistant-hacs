@@ -21,7 +21,6 @@ from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import DATA_COORDINATOR, DATA_PAIRING_COORDINATOR, DOMAIN
 
 DEFAULT_TIMEOUT_SECONDS = 45
 MIN_TIMEOUT_SECONDS = 5
@@ -717,9 +716,8 @@ class WatchUpdatesView(HomeAssistantView):
     name = "api:wrist_assistant_updates"
     requires_auth = True
 
-    @property
-    def _coordinator(self) -> DeltaCoordinator:
-        return self.hass.data[DOMAIN][DATA_COORDINATOR]
+    def __init__(self, coordinator: DeltaCoordinator) -> None:
+        self._coordinator = coordinator
 
     async def post(self, request: Request) -> Response:
         """Handle delta update poll request."""
@@ -779,9 +777,8 @@ class PairingRedeemView(HomeAssistantView):
     name = "api:wrist_assistant_pairing_redeem"
     requires_auth = False
 
-    @property
-    def _pairing(self) -> PairingCoordinator:
-        return self.hass.data[DOMAIN][DATA_PAIRING_COORDINATOR]
+    def __init__(self, pairing: PairingCoordinator) -> None:
+        self._pairing = pairing
 
     async def post(self, request: Request) -> Response:
         """Redeem one-time pairing code."""
@@ -829,7 +826,7 @@ class PairingRedeemView(HomeAssistantView):
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("Failed to refresh active pairing after redeem code=%s", code_hint)
 
-            self.hass.async_create_task(_refresh_active())
+            self._pairing.hass.async_create_task(_refresh_active())
 
         return self.json(token_payload, status_code=200)
 
@@ -841,9 +838,8 @@ class PairingQRCodeView(HomeAssistantView):
     name = "api:wrist_assistant_pairing_qr"
     requires_auth = True
 
-    @property
-    def _pairing(self) -> PairingCoordinator:
-        return self.hass.data[DOMAIN][DATA_PAIRING_COORDINATOR]
+    def __init__(self, pairing: PairingCoordinator) -> None:
+        self._pairing = pairing
 
     async def get(self, request: Request) -> Response:
         """Return current pairing QR image."""

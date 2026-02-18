@@ -65,9 +65,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
-    hass.http.register_view(WatchUpdatesView())
-    hass.http.register_view(PairingRedeemView())
-    hass.http.register_view(PairingQRCodeView())
+    hass.http.register_view(WatchUpdatesView(coordinator))
+    hass.http.register_view(PairingRedeemView(pairing_coordinator))
+    hass.http.register_view(PairingQRCodeView(pairing_coordinator))
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
