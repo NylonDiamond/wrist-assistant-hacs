@@ -12,6 +12,7 @@ This integration registers a single authenticated HTTP endpoint (`POST /api/watc
 - **Per-watch session tracking** — multiple watches can connect simultaneously, each with their own entity subscriptions
 - **Automatic cursor management** — stale cursors trigger a resync signal so the watch can recover gracefully
 - **Bounded memory** — uses a fixed-size ring buffer (5,000 events) so memory usage stays constant
+- **Ready-to-scan pairing QR** — generated automatically after setup, with refresh controls in the integration device
 
 ## Installation
 
@@ -129,6 +130,17 @@ Creates a short-lived one-time pairing code and returns a payload suitable for Q
 - `home_assistant_url` / `local_url` / `remote_url` — URLs included in pairing payload
 
 Use this from **Developer Tools -> Actions**, then encode `pairing_uri` as a QR code and scan it from Wrist Assistant's **Sign in -> Scan QR** path.
+
+## Pairing UX (no Developer Tools required)
+
+After integration setup, Wrist Assistant now:
+
+- shows an immediate persistent notification with a scannable pairing QR image
+- exposes a `camera` entity **Pairing QR**
+- exposes a `button` entity **Refresh pairing QR**
+- exposes a sensor **Pairing expires at**
+
+So users can scan directly from the setup notification or integration device page.
 
 ## Wrist Assistant App
 

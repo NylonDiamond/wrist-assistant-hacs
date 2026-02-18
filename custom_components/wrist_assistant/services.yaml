@@ -10,7 +10,8 @@ create_pairing_code:
   description: >-
     Generate a one-time QR payload for Wrist Assistant app sign-in. The
     response includes a `pairing_uri` value that should be encoded as a QR code.
-    Redeeming the code issues a long-lived access token.
+    Redeeming the code issues a long-lived access token and updates the active
+    Pairing QR entities.
   fields:
     local_url:
       name: Local URL

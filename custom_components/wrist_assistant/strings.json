@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Wrist Assistant",
-        "description": "This will enable the delta-sync API endpoint used by the Wrist Assistant Apple Watch app."
+        "description": "This enables Wrist Assistant delta-sync and creates a ready-to-scan pairing QR in Home Assistant."
       }
     },
     "abort": {

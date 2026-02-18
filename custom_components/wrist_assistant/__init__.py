@@ -6,6 +6,7 @@ import logging
 
 import voluptuous as vol
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import (
@@ -19,8 +20,15 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import network
 
-from .api import DeltaCoordinator, PairingCoordinator, PairingRedeemView, WatchUpdatesView
+from .api import (
+    DeltaCoordinator,
+    PairingCoordinator,
+    PairingQRCodeView,
+    PairingRedeemView,
+    WatchUpdatesView,
+)
 from .const import (
     DATA_COORDINATOR,
     DATA_PAIRING_COORDINATOR,
@@ -34,6 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
 _ORPHANED_SUFFIXES = ("_entity_list",)
+_PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _CREATE_PAIRING_SCHEMA = vol.Schema(
     {
         vol.Optional("local_url"): cv.string,
@@ -57,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
     hass.http.register_view(WatchUpdatesView(coordinator))
     hass.http.register_view(PairingRedeemView(pairing_coordinator))
+    hass.http.register_view(PairingQRCodeView(pairing_coordinator))
 
     @callback
     def _handle_stop(_event) -> None:
@@ -68,6 +78,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    default_user = await _resolve_pairing_user(hass, None)
+    local_url = _sanitize_base_url(hass.config.internal_url)
+    remote_url = _sanitize_base_url(hass.config.external_url)
+    home_assistant_url = remote_url or local_url
+    if not home_assistant_url:
+        try:
+            home_assistant_url = _sanitize_base_url(
+                network.get_url(
+                    hass,
+                    prefer_external=True,
+                    allow_ip=True,
+                    require_ssl=False,
+                )
+            )
+        except HomeAssistantError:
+            home_assistant_url = ""
+    pairing_coordinator.async_configure_defaults(
+        user_id=default_user.id if default_user else None,
+        home_assistant_url=home_assistant_url,
+        local_url=local_url,
+        remote_url=remote_url,
+        lifespan_days=3650,
+    )
+
+    if default_user and home_assistant_url:
+        payload = await pairing_coordinator.async_refresh_active_pairing(
+            default_user,
+            home_assistant_url=home_assistant_url,
+            local_url=local_url,
+            remote_url=remote_url,
+            lifespan_days=3650,
+        )
+        _show_pairing_notification(hass, entry, payload)
 
     async def _handle_force_resync(call: ServiceCall) -> None:
         coordinator.async_force_resync()
@@ -84,17 +128,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lifespan_days = int(call.data.get("lifespan_days", 3650))
         home_assistant_url = remote_url or local_url
         if not home_assistant_url:
+            try:
+                home_assistant_url = _sanitize_base_url(
+                    network.get_url(
+                        hass,
+                        prefer_external=True,
+                        allow_ip=True,
+                        require_ssl=False,
+                    )
+                )
+            except HomeAssistantError:
+                home_assistant_url = ""
+        if not home_assistant_url:
             raise HomeAssistantError(
                 "Set local_url/remote_url in the service call or configure internal/external URL in Home Assistant."
             )
 
-        return await pairing_coordinator.async_create_pairing_code(
+        payload = await pairing_coordinator.async_refresh_active_pairing(
             user,
             home_assistant_url=home_assistant_url,
             local_url=local_url,
             remote_url=remote_url,
             lifespan_days=lifespan_days,
         )
+        _show_pairing_notification(hass, entry, payload)
+        return payload
 
     hass.services.async_register(
         DOMAIN,
@@ -118,6 +176,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if data and DATA_PAIRING_COORDINATOR in data:
             data[DATA_PAIRING_COORDINATOR].async_shutdown()
             data.pop(DATA_PAIRING_COORDINATOR, None)
+        persistent_notification.async_dismiss(
+            hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
+        )
         hass.services.async_remove(DOMAIN, SERVICE_CREATE_PAIRING_CODE)
         hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
     return unload_ok
@@ -174,3 +235,22 @@ async def _resolve_pairing_user(hass: HomeAssistant, user_id: str | None):
         if user.is_owner and user.is_active:
             return user
     return None
+
+
+def _show_pairing_notification(
+    hass: HomeAssistant, entry: ConfigEntry, payload: dict[str, object]
+) -> None:
+    """Show immediate post-setup pairing notification with QR."""
+    expires_at = payload.get("expires_at", "unknown")
+    message = (
+        "Scan this QR in Wrist Assistant app:\n\n"
+        "![Wrist Assistant Pairing QR](/api/wrist_assistant/pairing/qr.svg)\n\n"
+        "App path: **Connect -> Sign in -> Scan QR**\n\n"
+        f"Pairing code expires: `{expires_at}`"
+    )
+    persistent_notification.async_create(
+        hass,
+        message=message,
+        title="Wrist Assistant pairing ready",
+        notification_id=_PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id,
+    )

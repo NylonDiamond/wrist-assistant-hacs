@@ -6,6 +6,7 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import io
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -429,6 +430,51 @@ class PairingCoordinator:
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
         self._sessions: dict[str, PairingSession] = {}
+        self._active_code: str | None = None
+        self._active_payload: dict[str, Any] | None = None
+        self._active_callbacks: list[callback] = []
+        self._default_user_id: str | None = None
+        self._default_local_url = ""
+        self._default_remote_url = ""
+        self._default_home_assistant_url = ""
+        self._default_lifespan_days = PAIRING_DEFAULT_LIFESPAN_DAYS
+
+    @callback
+    def async_add_active_listener(self, cb: callback) -> callback:
+        """Register callback for active pairing updates."""
+        self._active_callbacks.append(cb)
+
+        @callback
+        def _unsub() -> None:
+            self._active_callbacks.remove(cb)
+
+        return _unsub
+
+    @callback
+    def async_configure_defaults(
+        self,
+        *,
+        user_id: str | None,
+        home_assistant_url: str,
+        local_url: str,
+        remote_url: str,
+        lifespan_days: int,
+    ) -> None:
+        """Set default pairing config used by refresh operations."""
+        self._default_user_id = user_id
+        self._default_home_assistant_url = home_assistant_url
+        self._default_local_url = local_url
+        self._default_remote_url = remote_url
+        self._default_lifespan_days = lifespan_days
+
+    @property
+    def active_payload(self) -> dict[str, Any] | None:
+        """Return currently active pairing payload."""
+        if self._active_code is None:
+            return None
+        if self._active_code not in self._sessions:
+            return None
+        return self._active_payload
 
     async def async_create_pairing_code(
         self,
@@ -473,6 +519,49 @@ class PairingCoordinator:
             "remote_url": remote_url,
         }
 
+    async def async_refresh_active_pairing(
+        self,
+        user: auth_models.User,
+        *,
+        home_assistant_url: str,
+        local_url: str,
+        remote_url: str,
+        lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
+    ) -> dict[str, Any]:
+        """Replace active pairing code with a new one."""
+        if self._active_code is not None:
+            self._revoke_code(self._active_code)
+
+        payload = await self.async_create_pairing_code(
+            user,
+            home_assistant_url=home_assistant_url,
+            local_url=local_url,
+            remote_url=remote_url,
+            lifespan_days=lifespan_days,
+        )
+        self._active_code = payload["pairing_code"]
+        self._active_payload = payload
+        self._fire_active_callbacks()
+        return payload
+
+    async def async_refresh_active_pairing_default(self) -> dict[str, Any] | None:
+        """Refresh active pairing using configured defaults."""
+        user_id = self._default_user_id
+        if user_id is None:
+            return None
+        user = await self.hass.auth.async_get_user(user_id)
+        if user is None or not user.is_active:
+            return None
+        if not self._default_home_assistant_url:
+            return None
+        return await self.async_refresh_active_pairing(
+            user,
+            home_assistant_url=self._default_home_assistant_url,
+            local_url=self._default_local_url,
+            remote_url=self._default_remote_url,
+            lifespan_days=self._default_lifespan_days,
+        )
+
     def async_redeem_pairing_code(
         self, code: str, remote_ip: str | None
     ) -> dict[str, Any] | None:
@@ -503,13 +592,42 @@ class PairingCoordinator:
         }
 
     @callback
+    def async_code_was_active(self, code: str) -> bool:
+        """Return whether redeemed code was the active QR code."""
+        return code == self._active_code
+
+    @callback
+    def async_clear_active_pairing(self) -> None:
+        """Clear active pairing state and notify listeners."""
+        self._active_code = None
+        self._active_payload = None
+        self._fire_active_callbacks()
+        
+    def svg_qr_bytes(self, payload: dict[str, Any] | None = None) -> bytes:
+        """Render the active pairing URI as an SVG QR image."""
+        active = payload or self.active_payload
+        if active is None:
+            return self._empty_qr_svg("No active pairing code")
+        pairing_uri = active.get("pairing_uri", "")
+        if not pairing_uri:
+            return self._empty_qr_svg("Missing pairing URI")
+
+        import segno  # noqa: PLC0415
+
+        qr = segno.make(pairing_uri, micro=False, error="M")
+        output = io.BytesIO()
+        qr.save(output, kind="svg", scale=8, border=2)
+        return output.getvalue()
+
+    @callback
     def async_shutdown(self) -> None:
         """Revoke all unused pending pairing tokens."""
-        for session in self._sessions.values():
-            refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
-            if refresh_token is not None:
-                self.hass.auth.async_remove_refresh_token(refresh_token)
+        for code in list(self._sessions):
+            self._revoke_code(code)
         self._sessions.clear()
+        self._active_code = None
+        self._active_payload = None
+        self._fire_active_callbacks()
 
     @callback
     def _prune_expired(self) -> None:
@@ -519,10 +637,42 @@ class PairingCoordinator:
             code for code, session in self._sessions.items() if session.expires_at <= now
         ]
         for code in expired_codes:
-            session = self._sessions.pop(code)
-            refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
-            if refresh_token is not None:
-                self.hass.auth.async_remove_refresh_token(refresh_token)
+            self._revoke_code(code)
+
+        if self._active_code and self._active_code not in self._sessions:
+            self._active_code = None
+            self._active_payload = None
+            self._fire_active_callbacks()
+
+    @callback
+    def _revoke_code(self, code: str) -> None:
+        """Revoke and remove a pairing session by code."""
+        session = self._sessions.pop(code, None)
+        if session is None:
+            return
+        refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
+        if refresh_token is not None:
+            self.hass.auth.async_remove_refresh_token(refresh_token)
+        if self._active_code == code:
+            self._active_code = None
+            self._active_payload = None
+
+    @callback
+    def _fire_active_callbacks(self) -> None:
+        """Notify listeners about active pairing changes."""
+        for cb in self._active_callbacks:
+            cb()
+
+    @staticmethod
+    def _empty_qr_svg(message: str) -> bytes:
+        return (
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'>"
+            "<rect width='256' height='256' fill='#ffffff'/>"
+            "<text x='128' y='128' text-anchor='middle' dominant-baseline='middle' "
+            "font-family='sans-serif' font-size='14' fill='#222222'>"
+            f"{message}"
+            "</text></svg>"
+        ).encode("utf-8")
 
 
 class WatchUpdatesView(HomeAssistantView):
@@ -617,4 +767,24 @@ class PairingRedeemView(HomeAssistantView):
         if token_payload is None:
             return self.json_message("Invalid or expired pairing code", status_code=400)
 
+        if self._pairing.async_code_was_active(pairing_code):
+            self._pairing.async_clear_active_pairing()
+            self.hass.async_create_task(self._pairing.async_refresh_active_pairing_default())
+
         return self.json(token_payload, status_code=200)
+
+
+class PairingQRCodeView(HomeAssistantView):
+    """Authenticated endpoint returning current pairing QR SVG."""
+
+    url = "/api/wrist_assistant/pairing/qr.svg"
+    name = "api:wrist_assistant_pairing_qr"
+    requires_auth = True
+
+    def __init__(self, pairing: PairingCoordinator) -> None:
+        self._pairing = pairing
+
+    async def get(self, request: Request) -> Response:
+        """Return current pairing QR image."""
+        svg = self._pairing.svg_qr_bytes()
+        return Response(body=svg, content_type="image/svg+xml")
