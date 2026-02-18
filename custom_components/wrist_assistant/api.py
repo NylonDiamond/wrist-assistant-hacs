@@ -508,7 +508,15 @@ class PairingCoordinator:
             expires_at=expires_at,
         )
 
-        uri_query = urlencode({"code": code, "base_url": home_assistant_url})
+        qr_params: dict[str, str] = {
+            "code": code,
+            "base_url": home_assistant_url,
+        }
+        if local_url:
+            qr_params["local_url"] = local_url
+        if remote_url:
+            qr_params["remote_url"] = remote_url
+        uri_query = urlencode(qr_params)
         return {
             "pairing_code": code,
             "pairing_uri": f"wristassistant://pair?{uri_query}",
