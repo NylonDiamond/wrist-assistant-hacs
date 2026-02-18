@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
+import logging
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -17,6 +18,7 @@ from homeassistant.auth import models as auth_models
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 DEFAULT_TIMEOUT_SECONDS = 45
@@ -29,6 +31,8 @@ PAIRING_CODE_TTL = timedelta(minutes=10)
 PAIRING_CLIENT_ID = "https://home-assistant.io/iOS/dev-auth"
 PAIRING_CLIENT_NAME = "Wrist Assistant QR Pairing"
 PAIRING_DEFAULT_LIFESPAN_DAYS = 3650
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -63,6 +67,7 @@ class PairingSession:
     local_url: str
     remote_url: str
     expires_at: datetime
+    lifespan_days: int
 
 
 class DeltaCoordinator:
@@ -506,6 +511,7 @@ class PairingCoordinator:
             local_url=local_url,
             remote_url=remote_url,
             expires_at=expires_at,
+            lifespan_days=lifespan_days,
         )
 
         qr_params: dict[str, str] = {
@@ -576,20 +582,29 @@ class PairingCoordinator:
         """Redeem a one-time pairing code and return OAuth credentials."""
         self._prune_expired()
 
-        session = self._sessions.pop(code, None)
+        session = self._sessions.get(code)
         if session is None:
             return None
 
         refresh_token = self.hass.auth.async_get_refresh_token(session.refresh_token_id)
         if refresh_token is None:
+            self._sessions.pop(code, None)
             return None
 
-        access_token = self.hass.auth.async_create_access_token(
-            refresh_token,
-            remote_ip=remote_ip,
-        )
-        expires_in = int(refresh_token.access_token_expiration.total_seconds())
-        return {
+        # Avoid proxy/X-Forwarded-For parsing issues; Home Assistant core's own
+        # long-lived token command also omits remote_ip here.
+        access_token = self.hass.auth.async_create_access_token(refresh_token)
+
+        expires_in: int | None = None
+        expiration = refresh_token.access_token_expiration
+        if isinstance(expiration, timedelta):
+            expires_in = int(expiration.total_seconds())
+        elif isinstance(expiration, (int, float)):
+            expires_in = int(expiration)
+        if not expires_in or expires_in <= 0:
+            expires_in = int(max(1, session.lifespan_days) * 86400)
+
+        token_payload = {
             "access_token": access_token,
             "token_type": "Bearer",
             "auth_mode": "manual_token",
@@ -598,6 +613,8 @@ class PairingCoordinator:
             "local_url": session.local_url,
             "remote_url": session.remote_url,
         }
+        self._sessions.pop(code, None)
+        return token_payload
 
     @callback
     def async_code_was_active(self, code: str) -> bool:
@@ -767,17 +784,40 @@ class PairingRedeemView(HomeAssistantView):
         pairing_code = payload.get("pairing_code")
         if not isinstance(pairing_code, str) or not pairing_code:
             return self.json_message("pairing_code is required", status_code=400)
-
-        token_payload = self._pairing.async_redeem_pairing_code(
-            pairing_code,
-            remote_ip=request.remote,
+        code_hint = pairing_code[:8]
+        _LOGGER.info(
+            "Pairing redeem request code=%s remote=%s",
+            code_hint,
+            request.remote,
         )
+
+        try:
+            token_payload = self._pairing.async_redeem_pairing_code(
+                pairing_code,
+                remote_ip=request.remote,
+            )
+        except HomeAssistantError as err:
+            _LOGGER.warning("Pairing code redemption rejected code=%s: %s", code_hint, err)
+            return self.json_message(str(err), status_code=400)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Unexpected error redeeming Wrist Assistant pairing code code=%s",
+                code_hint,
+            )
+            return self.json_message("Internal pairing redemption error", status_code=500)
         if token_payload is None:
+            _LOGGER.warning("Pairing code invalid/expired code=%s", code_hint)
             return self.json_message("Invalid or expired pairing code", status_code=400)
+        _LOGGER.info("Pairing redeem success code=%s", code_hint)
 
         if self._pairing.async_code_was_active(pairing_code):
-            self._pairing.async_clear_active_pairing()
-            self.hass.async_create_task(self._pairing.async_refresh_active_pairing_default())
+            async def _refresh_active() -> None:
+                try:
+                    await self._pairing.async_refresh_active_pairing_default()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Failed to refresh active pairing after redeem code=%s", code_hint)
+
+            self.hass.async_create_task(_refresh_active())
 
         return self.json(token_payload, status_code=200)
 
