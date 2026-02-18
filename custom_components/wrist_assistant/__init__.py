@@ -246,9 +246,13 @@ def _show_pairing_notification(
 ) -> None:
     """Show immediate post-setup pairing notification with QR."""
     expires_at = payload.get("expires_at", "unknown")
+    pairing_code = payload.get("pairing_code", "")
+    qr_path = "/api/wrist_assistant/pairing/qr.svg"
+    if isinstance(pairing_code, str) and pairing_code:
+        qr_path = f"{qr_path}?code={pairing_code}"
     message = (
         "Scan this QR in Wrist Assistant app:\n\n"
-        "![Wrist Assistant Pairing QR](/api/wrist_assistant/pairing/qr.svg)\n\n"
+        f"![Wrist Assistant Pairing QR]({qr_path})\n\n"
         "App path: **Connect -> Sign in -> Scan QR**\n\n"
         f"Pairing code expires: `{expires_at}`"
     )

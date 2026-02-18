@@ -543,8 +543,7 @@ class PairingCoordinator:
         lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
     ) -> dict[str, Any]:
         """Replace active pairing code with a new one."""
-        if self._active_code is not None:
-            self._revoke_code(self._active_code)
+        previous_active_code = self._active_code
 
         payload = await self.async_create_pairing_code(
             user,
@@ -555,6 +554,10 @@ class PairingCoordinator:
         )
         self._active_code = payload["pairing_code"]
         self._active_payload = payload
+
+        if previous_active_code and previous_active_code != self._active_code:
+            self._revoke_code(previous_active_code)
+
         self._fire_active_callbacks()
         return payload
 
@@ -807,6 +810,16 @@ class PairingRedeemView(HomeAssistantView):
             return self.json_message("Internal pairing redemption error", status_code=500)
         if token_payload is None:
             _LOGGER.warning("Pairing code invalid/expired code=%s", code_hint)
+            async def _refresh_after_invalid() -> None:
+                try:
+                    await self._pairing.async_refresh_active_pairing_default()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception(
+                        "Failed to refresh active pairing after invalid redeem code=%s",
+                        code_hint,
+                    )
+
+            self.hass.async_create_task(_refresh_after_invalid())
             return self.json_message("Invalid or expired pairing code", status_code=400)
         _LOGGER.info("Pairing redeem success code=%s", code_hint)
 
@@ -835,4 +848,12 @@ class PairingQRCodeView(HomeAssistantView):
     async def get(self, request: Request) -> Response:
         """Return current pairing QR image."""
         svg = self._pairing.svg_qr_bytes()
-        return Response(body=svg, content_type="image/svg+xml")
+        return Response(
+            body=svg,
+            content_type="image/svg+xml",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
