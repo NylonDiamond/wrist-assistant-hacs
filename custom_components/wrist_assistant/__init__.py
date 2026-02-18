@@ -283,7 +283,7 @@ async def _cleanup_orphaned_pairing_tokens(
                 and token.client_name.startswith("Wrist Assistant QR Pairing")
                 and token.id not in active_token_ids
             ):
-                await hass.auth.async_remove_refresh_token(token)
+                hass.auth.async_remove_refresh_token(token)
                 revoked += 1
     if revoked:
         _LOGGER.info(
