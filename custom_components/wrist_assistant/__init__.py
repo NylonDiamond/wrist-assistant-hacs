@@ -286,6 +286,9 @@ async def _cleanup_orphaned_pairing_tokens(
     orphaned long-lived tokens in the auth system. Identify them by
     client_id and client_name prefix, then revoke any that are not
     tracked by the current PairingCoordinator.
+
+    Only revoke tokens that were never redeemed (last_used_at is None).
+    Redeemed tokens have been issued to a watch app and must be kept.
     """
     active_token_ids = pairing.tracked_refresh_token_ids
     revoked = 0
@@ -296,6 +299,7 @@ async def _cleanup_orphaned_pairing_tokens(
                 and token.client_name
                 and token.client_name.startswith("Wrist Assistant QR Pairing")
                 and token.id not in active_token_ids
+                and token.last_used_at is None
             ):
                 hass.auth.async_remove_refresh_token(token)
                 revoked += 1
