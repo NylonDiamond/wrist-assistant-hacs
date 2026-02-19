@@ -159,6 +159,7 @@ class EventsProcessedSensor(_WristAssistantSensorBase):
     _attr_name = "Events processed"
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -176,6 +177,7 @@ class EventBufferUsageSensor(_WristAssistantSensorBase):
     _attr_icon = "mdi:memory"
     _attr_native_unit_of_measurement = "%"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -194,6 +196,7 @@ class EventsPerMinuteSensor(_WristAssistantSensorBase):
     _attr_native_unit_of_measurement = "events/min"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_should_poll = True
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -212,6 +215,7 @@ class PairingExpirySensor(SensorEntity):
     _attr_name = "Pairing expires at"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:timer-outline"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, pairing: PairingCoordinator, entry: ConfigEntry) -> None:
         self._pairing = pairing
@@ -304,13 +308,25 @@ class WatchLastActivitySensor(_WatchSensorBase):
     ) -> None:
         super().__init__(coordinator, entry, watch_id)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
+        self._cached_last_seen = None
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @callback
+    def _handle_update(self) -> None:
+        session = self._coordinator._sessions.get(self._watch_id)
+        if session is not None:
+            self._cached_last_seen = session.last_seen
+        self.async_write_ha_state()
 
     @property
     def native_value(self):
         session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return None
-        return session.last_seen
+        if session is not None:
+            return session.last_seen
+        return self._cached_last_seen
 
 
 class WatchSubscribedEntitiesSensor(_WatchSensorBase):
@@ -326,24 +342,42 @@ class WatchSubscribedEntitiesSensor(_WatchSensorBase):
     ) -> None:
         super().__init__(coordinator, entry, watch_id)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
+        self._cached_count: int = 0
+        self._cached_entities: dict[str, str] = {}
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @callback
+    def _handle_update(self) -> None:
+        session = self._coordinator._sessions.get(self._watch_id)
+        if session is not None:
+            self._cached_count = len(session.entities)
+            entities: dict[str, str] = {}
+            for eid in sorted(session.entities):
+                state = self.hass.states.get(eid)
+                entities[eid] = state.name if state else eid
+            self._cached_entities = entities
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:
         session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return 0
-        return len(session.entities)
+        if session is not None:
+            return len(session.entities)
+        return self._cached_count
 
     @property
     def extra_state_attributes(self) -> dict:
         session = self._coordinator._sessions.get(self._watch_id)
-        if session is None:
-            return {}
-        entities: dict[str, str] = {}
-        for eid in sorted(session.entities):
-            state = self.hass.states.get(eid)
-            entities[eid] = state.name if state else eid
-        return {"entities": entities}
+        if session is not None:
+            entities: dict[str, str] = {}
+            for eid in sorted(session.entities):
+                state = self.hass.states.get(eid)
+                entities[eid] = state.name if state else eid
+            return {"entities": entities}
+        return {"entities": self._cached_entities}
 
 
 class WatchPollIntervalSensor(_WatchSensorBase):
@@ -355,6 +389,7 @@ class WatchPollIntervalSensor(_WatchSensorBase):
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 1
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
