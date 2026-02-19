@@ -42,7 +42,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
-_ORPHANED_SUFFIXES = ("_entity_list",)
+_ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr")
 _PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _CREATE_PAIRING_SCHEMA = vol.Schema(
     {
@@ -102,26 +102,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lifespan_days=3650,
     )
 
-    @callback
-    def _on_active_pairing_changed() -> None:
-        active = pairing_coordinator.active_payload
-        if active is not None:
-            _show_pairing_notification(hass, entry, active)
-
-    unsub_pairing_listener = pairing_coordinator.async_add_active_listener(
-        _on_active_pairing_changed
-    )
-    entry.async_on_unload(unsub_pairing_listener)
-
     if default_user and home_assistant_url:
-        payload = await pairing_coordinator.async_refresh_active_pairing(
+        await pairing_coordinator.async_refresh_active_pairing(
             default_user,
             home_assistant_url=home_assistant_url,
             local_url=local_url,
             remote_url=remote_url,
             lifespan_days=3650,
         )
-        _show_pairing_notification(hass, entry, payload)
+
+    _show_pairing_notification(hass, entry, pairing_coordinator)
 
     async def _handle_force_resync(call: ServiceCall) -> None:
         coordinator.async_force_resync()
@@ -157,7 +147,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             remote_url=remote_url,
             lifespan_days=lifespan_days,
         )
-        _show_pairing_notification(hass, entry, payload)
         return payload
 
     hass.services.async_register(
@@ -293,19 +282,15 @@ async def _cleanup_orphaned_pairing_tokens(
 
 
 def _show_pairing_notification(
-    hass: HomeAssistant, entry: ConfigEntry, payload: dict[str, object]
+    hass: HomeAssistant, entry: ConfigEntry, pairing: PairingCoordinator
 ) -> None:
-    """Show immediate post-setup pairing notification with QR."""
-    expires_at = payload.get("expires_at", "unknown")
-    pairing_code = payload.get("pairing_code", "")
-    qr_path = "/api/wrist_assistant/pairing/qr.svg"
-    if isinstance(pairing_code, str) and pairing_code:
-        qr_path = f"{qr_path}?code={pairing_code}"
+    """Show persistent pairing notification with auto-refreshing QR."""
+    qr_path = f"/api/wrist_assistant/pairing/qr.svg?viewer={pairing.viewer_secret}"
     message = (
         "Scan this QR in Wrist Assistant app:\n\n"
         f"![Wrist Assistant Pairing QR]({qr_path})\n\n"
         "App path: **Connect -> Sign in -> Scan QR**\n\n"
-        f"Pairing code expires: `{expires_at}`"
+        "The QR code refreshes automatically."
     )
     persistent_notification.async_create(
         hass,

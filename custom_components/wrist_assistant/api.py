@@ -444,6 +444,7 @@ class PairingCoordinator:
         self._default_remote_url = ""
         self._default_home_assistant_url = ""
         self._default_lifespan_days = PAIRING_DEFAULT_LIFESPAN_DAYS
+        self._viewer_secret: str = secrets.token_urlsafe(32)
 
     @callback
     def async_add_active_listener(self, cb: callback) -> callback:
@@ -472,6 +473,32 @@ class PairingCoordinator:
         self._default_local_url = local_url
         self._default_remote_url = remote_url
         self._default_lifespan_days = lifespan_days
+
+    @property
+    def viewer_secret(self) -> str:
+        """Return the stable viewer secret for QR image URLs."""
+        return self._viewer_secret
+
+    def async_verify_viewer_secret(self, secret: str | None) -> bool:
+        """Constant-time comparison of viewer secret."""
+        if not secret:
+            return False
+        return secrets.compare_digest(secret, self._viewer_secret)
+
+    async def async_ensure_active_pairing(self) -> bool:
+        """Ensure an active, non-expired pairing code exists.
+
+        If the current code is expired or missing, auto-refresh using defaults.
+        Returns True if an active code is available afterward.
+        """
+        if self._active_code and self._active_code in self._sessions:
+            session = self._sessions[self._active_code]
+            if session.expires_at > dt_util.utcnow():
+                return True
+        # Code is missing or expired — refresh transparently.
+        self._prune_expired()
+        result = await self.async_refresh_active_pairing_default()
+        return result is not None
 
     @property
     def active_payload(self) -> dict[str, Any] | None:
@@ -850,12 +877,14 @@ class PairingQRCodeView(HomeAssistantView):
         self._pairing = pairing
 
     async def get(self, request: Request) -> Response:
-        """Return current pairing QR image."""
-        # Persistent notifications render markdown images via plain <img> fetches,
-        # which do not include Home Assistant auth headers. Accept only a valid
-        # active one-time pairing code so this endpoint remains scoped and short-lived.
-        if not self._pairing.async_is_active_code(request.query.get("code")):
+        """Return current pairing QR image.
+
+        Authenticated via a stable viewer secret so the URL never expires.
+        If the underlying pairing code is expired, it is auto-refreshed.
+        """
+        if not self._pairing.async_verify_viewer_secret(request.query.get("viewer")):
             return Response(status=404)
+        await self._pairing.async_ensure_active_pairing()
         svg = self._pairing.svg_qr_bytes()
         return Response(
             body=svg,
