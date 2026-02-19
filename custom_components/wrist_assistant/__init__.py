@@ -50,6 +50,7 @@ _DISABLE_ON_UPGRADE_SUFFIXES = (
     "_events_per_minute",
     "_pairing_expires_at",
     "_poll_interval",
+    "_connected_since",
 )
 _PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _CREATE_PAIRING_SCHEMA = vol.Schema(
