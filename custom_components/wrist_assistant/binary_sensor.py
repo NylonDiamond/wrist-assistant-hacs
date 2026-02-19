@@ -90,18 +90,18 @@ class WatchSyncStatusSensor(BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        return self._watch_id in self._coordinator._sessions
+        return True
 
     @property
-    def is_on(self) -> bool | None:
+    def is_on(self) -> bool:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
-            return None
+            return False
         return session.entities_synced
 
     @property
     def extra_state_attributes(self) -> dict:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
-            return {}
+            return {"config_hash": None}
         return {"config_hash": session.config_hash}
