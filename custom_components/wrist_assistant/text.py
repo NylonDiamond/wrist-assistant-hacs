@@ -97,4 +97,4 @@ class WatchNameText(TextEntity):
 
     @property
     def available(self) -> bool:
-        return self._watch_id in self._coordinator._sessions
+        return True

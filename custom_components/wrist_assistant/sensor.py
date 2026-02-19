@@ -410,6 +410,7 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
 
     _attr_name = "Connected since"
     _attr_icon = "mdi:connection"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self, coordinator: DeltaCoordinator, entry: ConfigEntry, watch_id: str
