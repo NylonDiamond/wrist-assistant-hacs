@@ -482,6 +482,14 @@ class PairingCoordinator:
             return None
         return self._active_payload
 
+    @callback
+    def async_is_active_code(self, code: str | None) -> bool:
+        """Return whether the provided code is the current active pairing code."""
+        if not code:
+            return False
+        self._prune_expired()
+        return code == self._active_code and code in self._sessions
+
     async def async_create_pairing_code(
         self,
         user: auth_models.User,
@@ -832,17 +840,22 @@ class PairingRedeemView(HomeAssistantView):
 
 
 class PairingQRCodeView(HomeAssistantView):
-    """Authenticated endpoint returning current pairing QR SVG."""
+    """Endpoint returning current pairing QR SVG for a valid active code."""
 
     url = "/api/wrist_assistant/pairing/qr.svg"
     name = "api:wrist_assistant_pairing_qr"
-    requires_auth = True
+    requires_auth = False
 
     def __init__(self, pairing: PairingCoordinator) -> None:
         self._pairing = pairing
 
     async def get(self, request: Request) -> Response:
         """Return current pairing QR image."""
+        # Persistent notifications render markdown images via plain <img> fetches,
+        # which do not include Home Assistant auth headers. Accept only a valid
+        # active one-time pairing code so this endpoint remains scoped and short-lived.
+        if not self._pairing.async_is_active_code(request.query.get("code")):
+            return Response(status=404)
         svg = self._pairing.svg_qr_bytes()
         return Response(
             body=svg,
