@@ -43,6 +43,14 @@ _LOGGER = logging.getLogger(__name__)
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
 _ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr")
+# Entities to auto-disable on upgrade (disabled-by-default only affects new installs)
+_DISABLE_ON_UPGRADE_SUFFIXES = (
+    "_events_processed",
+    "_buffer_usage",
+    "_events_per_minute",
+    "_pairing_expires_at",
+    "_poll_interval",
+)
 _PAIRING_NOTIFICATION_ID_TEMPLATE = "wrist_assistant_pairing_%s"
 _CREATE_PAIRING_SCHEMA = vol.Schema(
     {
@@ -59,6 +67,7 @@ _CREATE_PAIRING_SCHEMA = vol.Schema(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Wrist Assistant from a config entry."""
     _cleanup_orphaned_entities(hass, entry)
+    _disable_noisy_entities(hass, entry)
 
     coordinator = DeltaCoordinator(hass)
     pairing_coordinator = PairingCoordinator(hass)
@@ -196,6 +205,22 @@ def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
             removed.append(entity_entry.entity_id)
     if removed:
         _LOGGER.info("Cleaned up %d orphaned entities: %s", len(removed), removed)
+
+
+def _disable_noisy_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """One-time disable of noisy diagnostic entities on upgrade."""
+    ent_reg = er.async_get(hass)
+    disabled = []
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if entity_entry.disabled:
+            continue
+        if any(entity_entry.unique_id.endswith(s) for s in _DISABLE_ON_UPGRADE_SUFFIXES):
+            ent_reg.async_update_entity(
+                entity_entry.entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+            )
+            disabled.append(entity_entry.entity_id)
+    if disabled:
+        _LOGGER.info("Disabled %d noisy entities on upgrade: %s", len(disabled), disabled)
 
 
 def _sanitize_base_url(value: str | None) -> str:

@@ -409,7 +409,6 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
     """Timestamp of when this watch first connected in the current session."""
 
     _attr_name = "Connected since"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:connection"
 
     def __init__(
@@ -419,8 +418,12 @@ class WatchConnectedSinceSensor(_WatchSensorBase):
         self._attr_unique_id = f"wrist_assistant_{watch_id}_connected_since"
 
     @property
-    def native_value(self):
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str | None:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is None:
-            return None
-        return session.first_seen
+            return "N/A"
+        return session.first_seen.isoformat()
