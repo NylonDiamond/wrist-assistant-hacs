@@ -55,7 +55,8 @@ class PairingQRCamera(Camera):
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes:
-        """Return QR image as SVG."""
+        """Return QR image as SVG, auto-refreshing if expired."""
+        await self._pairing.async_ensure_active_pairing()
         return self._pairing.svg_qr_bytes()
 
     @property
