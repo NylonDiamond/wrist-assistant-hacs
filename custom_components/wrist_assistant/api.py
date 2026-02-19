@@ -616,7 +616,7 @@ class PairingCoordinator:
         )
 
     def async_redeem_pairing_code(
-        self, code: str, remote_ip: str | None
+        self, code: str, remote_ip: str | None, device_name: str | None = None
     ) -> dict[str, Any] | None:
         """Redeem a one-time pairing code and return OAuth credentials."""
         self._prune_expired()
@@ -629,6 +629,9 @@ class PairingCoordinator:
         if refresh_token is None:
             self._sessions.pop(code, None)
             return None
+
+        if device_name:
+            refresh_token.client_name = f"Wrist Assistant ({device_name})"
 
         # Avoid proxy/X-Forwarded-For parsing issues; Home Assistant core's own
         # long-lived token command also omits remote_ip here.
@@ -828,10 +831,14 @@ class PairingRedeemView(HomeAssistantView):
         pairing_code = payload.get("pairing_code")
         if not isinstance(pairing_code, str) or not pairing_code:
             return self.json_message("pairing_code is required", status_code=400)
+        device_name = payload.get("device_name")
+        if device_name is not None and not isinstance(device_name, str):
+            device_name = None
         code_hint = pairing_code[:8]
         _LOGGER.info(
-            "Pairing redeem request code=%s remote=%s",
+            "Pairing redeem request code=%s device=%s remote=%s",
             code_hint,
+            device_name or "(not provided)",
             request.remote,
         )
 
@@ -839,6 +846,7 @@ class PairingRedeemView(HomeAssistantView):
             token_payload = self._pairing.async_redeem_pairing_code(
                 pairing_code,
                 remote_ip=request.remote,
+                device_name=device_name,
             )
         except HomeAssistantError as err:
             _LOGGER.warning("Pairing code redemption rejected code=%s: %s", code_hint, err)
