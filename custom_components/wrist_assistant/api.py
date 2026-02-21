@@ -438,11 +438,6 @@ class PairingCoordinator:
         self._active_code: str | None = None
         self._active_payload: dict[str, Any] | None = None
         self._active_callbacks: list[callback] = []
-        self._default_user_id: str | None = None
-        self._default_local_url = ""
-        self._default_remote_url = ""
-        self._default_home_assistant_url = ""
-        self._default_lifespan_days = PAIRING_DEFAULT_LIFESPAN_DAYS
 
     @callback
     def async_add_active_listener(self, cb: callback) -> callback:
@@ -455,23 +450,6 @@ class PairingCoordinator:
 
         return _unsub
 
-    @callback
-    def async_configure_defaults(
-        self,
-        *,
-        user_id: str | None,
-        home_assistant_url: str,
-        local_url: str,
-        remote_url: str,
-        lifespan_days: int,
-    ) -> None:
-        """Set default pairing config used by refresh operations."""
-        self._default_user_id = user_id
-        self._default_home_assistant_url = home_assistant_url
-        self._default_local_url = local_url
-        self._default_remote_url = remote_url
-        self._default_lifespan_days = lifespan_days
-
     @property
     def active_payload(self) -> dict[str, Any] | None:
         """Return currently active pairing payload."""
@@ -480,14 +458,6 @@ class PairingCoordinator:
         if self._active_code not in self._sessions:
             return None
         return self._active_payload
-
-    @callback
-    def async_is_active_code(self, code: str | None) -> bool:
-        """Return whether the provided code is the current active pairing code."""
-        if not code:
-            return False
-        self._prune_expired()
-        return code == self._active_code and code in self._sessions
 
     async def async_create_pairing_code(
         self,
@@ -569,24 +539,6 @@ class PairingCoordinator:
         self._fire_active_callbacks()
         return payload
 
-    async def async_refresh_active_pairing_default(self) -> dict[str, Any] | None:
-        """Refresh active pairing using configured defaults."""
-        user_id = self._default_user_id
-        if user_id is None:
-            return None
-        user = await self.hass.auth.async_get_user(user_id)
-        if user is None or not user.is_active:
-            return None
-        if not self._default_home_assistant_url:
-            return None
-        return await self.async_refresh_active_pairing(
-            user,
-            home_assistant_url=self._default_home_assistant_url,
-            local_url=self._default_local_url,
-            remote_url=self._default_remote_url,
-            lifespan_days=self._default_lifespan_days,
-        )
-
     def async_redeem_pairing_code(
         self, code: str, remote_ip: str | None, device_name: str | None = None
     ) -> dict[str, Any] | None:
@@ -635,18 +587,6 @@ class PairingCoordinator:
         """Return refresh token IDs currently tracked by active sessions."""
         return {s.refresh_token_id for s in self._sessions.values()}
 
-    @callback
-    def async_code_was_active(self, code: str) -> bool:
-        """Return whether redeemed code was the active pairing code."""
-        return code == self._active_code
-
-    @callback
-    def async_clear_active_pairing(self) -> None:
-        """Clear active pairing state and notify listeners."""
-        self._active_code = None
-        self._active_payload = None
-        self._fire_active_callbacks()
-        
     @callback
     def async_shutdown(self) -> None:
         """Revoke all unused pending pairing tokens."""
@@ -805,16 +745,6 @@ class PairingRedeemView(HomeAssistantView):
             _LOGGER.warning("Pairing code invalid/expired code=%s", code_hint)
             return self.json_message("Invalid or expired pairing code", status_code=400)
         _LOGGER.info("Pairing redeem success code=%s", code_hint)
-
-        if self._pairing.async_code_was_active(pairing_code):
-            async def _refresh_active() -> None:
-                try:
-                    await self._pairing.async_refresh_active_pairing_default()
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Failed to refresh active pairing after redeem code=%s", code_hint)
-
-            self._pairing.hass.async_create_task(_refresh_active())
-
         return self.json(token_payload, status_code=200)
 
 
