@@ -92,33 +92,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    default_user = await _resolve_pairing_user(hass, None)
-    local_url = _sanitize_base_url(hass.config.internal_url) or _discover_base_url(
-        hass, prefer_external=False
-    )
-    remote_url = _sanitize_base_url(hass.config.external_url) or _discover_base_url(
-        hass, prefer_external=True
-    )
-    home_assistant_url = remote_url or local_url
-    if not home_assistant_url:
-        home_assistant_url = _discover_base_url(hass, prefer_external=True)
-    pairing_coordinator.async_configure_defaults(
-        user_id=default_user.id if default_user else None,
-        home_assistant_url=home_assistant_url,
-        local_url=local_url,
-        remote_url=remote_url,
-        lifespan_days=3650,
-    )
-
-    if default_user and home_assistant_url:
-        await pairing_coordinator.async_refresh_active_pairing(
-            default_user,
-            home_assistant_url=home_assistant_url,
-            local_url=local_url,
-            remote_url=remote_url,
-            lifespan_days=3650,
-        )
-
     if not entry.data.get("initial_setup_done"):
         _show_pairing_notification(hass, entry, pairing_coordinator)
         hass.config_entries.async_update_entry(
