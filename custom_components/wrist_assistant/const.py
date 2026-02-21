@@ -6,3 +6,4 @@ DATA_PAIRING_COORDINATOR = "pairing_coordinator"
 PLATFORMS = ["sensor", "binary_sensor", "text", "camera"]
 SERVICE_FORCE_RESYNC = "force_resync"
 SERVICE_CREATE_PAIRING_CODE = "create_pairing_code"
+SETUP_QR_DATA_KEY = "setup_qr"
