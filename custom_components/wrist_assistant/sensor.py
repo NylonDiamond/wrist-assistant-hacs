@@ -208,7 +208,7 @@ class EventsPerMinuteSensor(_WristAssistantSensorBase):
 
 
 class PairingExpirySensor(SensorEntity):
-    """Timestamp for currently active pairing QR expiration."""
+    """Timestamp for currently active pairing code expiration."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC

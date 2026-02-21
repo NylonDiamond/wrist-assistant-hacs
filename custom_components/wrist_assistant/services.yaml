@@ -8,10 +8,9 @@ force_resync:
 create_pairing_code:
   name: Create pairing code
   description: >-
-    Generate a one-time QR payload for Wrist Assistant app sign-in. The
-    response includes a `pairing_uri` value that should be encoded as a QR code.
-    Redeeming the code issues a long-lived access token and updates the active
-    Pairing QR entities.
+    Generate a one-time pairing code for the Wrist Assistant app. The
+    response includes a `pairing_uri` and `pairing_code` that the watch app
+    can use to authenticate. Redeeming the code issues a long-lived access token.
   fields:
     local_url:
       name: Local URL
@@ -32,7 +31,7 @@ create_pairing_code:
     lifespan_days:
       name: Token lifespan days
       description: >-
-        Lifespan for the long-lived access token created when the QR code is redeemed.
+        Lifespan for the long-lived access token created when the code is redeemed.
         Default is 3650 (10 years).
       example: 3650
       selector:

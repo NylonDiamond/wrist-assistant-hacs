@@ -24,10 +24,8 @@ from homeassistant.helpers import network
 
 from .api import (
     PAIRING_CLIENT_ID,
-    ConnectionInfoQRView,
     DeltaCoordinator,
     PairingCoordinator,
-    PairingQRCodeView,
     PairingRedeemView,
     WatchUpdatesView,
 )
@@ -38,13 +36,12 @@ from .const import (
     PLATFORMS,
     SERVICE_CREATE_PAIRING_CODE,
     SERVICE_FORCE_RESYNC,
-    SETUP_QR_DATA_KEY,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
-_ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr")
+_ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr", "_pairing_qr", "_connection_qr")
 # Entities to auto-disable on upgrade (disabled-by-default only affects new installs)
 _DISABLE_ON_UPGRADE_SUFFIXES = (
     "_events_processed",
@@ -72,9 +69,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _cleanup_orphaned_entities(hass, entry)
     _disable_noisy_entities(hass, entry)
 
-    # Clean up temporary setup QR data from config flow
-    hass.data.setdefault(DOMAIN, {}).pop(SETUP_QR_DATA_KEY, None)
-
     coordinator = DeltaCoordinator(hass)
     pairing_coordinator = PairingCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})
@@ -82,8 +76,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
     hass.http.register_view(WatchUpdatesView(coordinator))
     hass.http.register_view(PairingRedeemView(pairing_coordinator))
-    hass.http.register_view(PairingQRCodeView(pairing_coordinator))
-    hass.http.register_view(ConnectionInfoQRView(pairing_coordinator))
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
@@ -283,7 +275,7 @@ async def _resolve_pairing_user(hass: HomeAssistant, user_id: str | None):
             return user
     _LOGGER.warning(
         "No active owner user found for Wrist Assistant pairing; "
-        "QR pairing will not be available until an owner user exists"
+        "pairing will not be available until an owner user exists"
     )
     return None
 
@@ -308,7 +300,10 @@ async def _cleanup_orphaned_pairing_tokens(
             if (
                 token.client_id == PAIRING_CLIENT_ID
                 and token.client_name
-                and token.client_name.startswith("Wrist Assistant QR Pairing")
+                and (
+                    token.client_name.startswith("Wrist Assistant QR Pairing")
+                    or token.client_name.startswith("Wrist Assistant Pairing")
+                )
                 and token.id not in active_token_ids
                 and token.last_used_at is None
             ):
@@ -324,16 +319,13 @@ async def _cleanup_orphaned_pairing_tokens(
 def _show_pairing_notification(
     hass: HomeAssistant, entry: ConfigEntry, pairing: PairingCoordinator
 ) -> None:
-    """Show persistent pairing notification with auto-refreshing QR."""
-    qr_path = f"/api/wrist_assistant/pairing/qr.svg?viewer={pairing.viewer_secret}"
+    """Show persistent pairing notification."""
     message = (
         "### Long-Lived Access Token (recommended)\n\n"
-        "Open the Wrist Assistant app and choose **Long-Lived Access Token**, "
-        "then tap **Scan Integration QR**.\n\n"
-        f"![Wrist Assistant Pairing QR]({qr_path})\n\n"
-        "The QR code refreshes automatically.\n\n"
+        "Call the `wrist_assistant.create_pairing_code` service to generate "
+        "a pairing code, then enter the values in the Wrist Assistant app.\n\n"
         "### OAuth\n\n"
-        "Choose **OAuth** in the app — no QR needed. "
+        "Choose **OAuth** in the app — no code needed. "
         "The app will open your Home Assistant login page directly."
     )
     persistent_notification.async_create(
