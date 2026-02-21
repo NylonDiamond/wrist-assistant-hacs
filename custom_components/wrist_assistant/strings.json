@@ -3,11 +3,7 @@
     "step": {
       "user": {
         "title": "Wrist Assistant",
-        "description": "This enables Wrist Assistant delta-sync and creates a ready-to-scan pairing QR in Home Assistant."
-      },
-      "pairing": {
-        "title": "Scan pairing QR code",
-        "description": "Open the Wrist Assistant app and choose **Long-Lived Access Token**, then tap **Scan Integration QR**.\n\n![Wrist Assistant Pairing QR]({qr_url})\n\nClick **Submit** when done."
+        "description": "This enables Wrist Assistant delta-sync. After setup, use the `wrist_assistant.create_pairing_code` service to generate a pairing code for the watch app."
       }
     },
     "abort": {

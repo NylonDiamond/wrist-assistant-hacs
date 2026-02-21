@@ -2,12 +2,12 @@
 
 Official Home Assistant integration for the [Wrist Assistant](https://github.com/NylonDiamond/ha-watch) Apple Watch app.
 
-Wrist Assistant adds fast delta-sync updates and a built-in QR pairing flow, so watch users can connect quickly and receive near real-time state changes without repeatedly downloading full entity state.
+Wrist Assistant adds fast delta-sync updates and a pairing code flow, so watch users can connect quickly and receive near real-time state changes without repeatedly downloading full entity state.
 
 ## Why install this
 
 - Faster watch updates with lower bandwidth usage (delta sync + long-poll)
-- Built-in QR pairing in Home Assistant (no manual token copy/paste)
+- Built-in pairing code generation for easy watch setup
 - Support for multiple watches with independent subscriptions
 - Recovery helpers for stale cursors and forced resync
 - Bounded memory event buffer for stable runtime behavior
@@ -36,31 +36,27 @@ Wrist Assistant adds fast delta-sync updates and a built-in QR pairing flow, so 
 2. Restart Home Assistant.
 3. Go to Settings -> Devices & Services -> Add Integration -> `Wrist Assistant`.
 
-## First-time setup (about 1 minute)
+## First-time setup
 
 1. Install and add the integration.
-2. Open the persistent notification: `Wrist Assistant pairing ready`.
-3. In the watch app, open Sign in -> Scan QR.
-4. Scan the QR shown in Home Assistant.
-5. In the watch app settings, choose update mode `Auto` or `Delta`.
+2. Call the `wrist_assistant.create_pairing_code` service to generate a pairing code.
+3. Enter the pairing code and connection details in the Wrist Assistant app.
+4. In the watch app settings, choose update mode `Auto` or `Delta`.
 
 ## What you get in Home Assistant
 
-- `camera` entity: Pairing QR
-- `button` entity: Refresh pairing QR
 - `sensor` entity: Pairing expires at
 - Per-watch diagnostic entities (activity, subscriptions, poll interval, sync status, and naming)
 - Services: `wrist_assistant.create_pairing_code`, `wrist_assistant.force_resync`
 
 ## Screenshots and GIFs
 
-Visual setup guide coming soon (integration card, pairing QR flow, and watch sync in action).
+Visual setup guide coming soon (integration card, pairing flow, and watch sync in action).
 
 ## Troubleshooting
 
-- No pairing QR visible: Open the Wrist Assistant device page and press `Refresh pairing QR`. If still missing, restart Home Assistant and reopen the device page.
 - Watch reports out-of-sync data: Run `wrist_assistant.force_resync` and let the watch reconnect.
-- Pairing code expired: Press `Refresh pairing QR` or call `wrist_assistant.create_pairing_code` to generate a fresh code.
+- Pairing code expired: Call `wrist_assistant.create_pairing_code` to generate a fresh code.
 
 ## Security notes
 
@@ -104,7 +100,7 @@ Response behavior:
 
 ### `POST /api/wrist_assistant/pairing/redeem`
 
-Unauthenticated one-time code redemption endpoint used by QR pairing.
+Unauthenticated one-time code redemption endpoint used by pairing.
 
 Example request body:
 
@@ -130,12 +126,12 @@ Example response body:
 
 ### `wrist_assistant.create_pairing_code` service
 
-Generates a short-lived one-time pairing code and returns a payload with `pairing_uri`.
+Generates a short-lived one-time pairing code and returns a payload with connection details.
 
 Key response fields:
 
 - `pairing_code`: one-time code
-- `pairing_uri`: payload to encode as QR (`wristassistant://pair?...`)
+- `pairing_uri`: deep link (`wristassistant://pair?...`)
 - `expires_at`: UTC expiration timestamp
 - `lifespan_days`: token lifespan (default 3650)
 - `home_assistant_url`, `local_url`, `remote_url`: URLs included in pairing payload

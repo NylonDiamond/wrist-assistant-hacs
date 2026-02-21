@@ -6,8 +6,6 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import io
-import json
 import logging
 import secrets
 from typing import Any
@@ -31,7 +29,7 @@ MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
 PAIRING_CODE_TTL = timedelta(minutes=10)
 PAIRING_CLIENT_ID = "https://home-assistant.io/iOS/dev-auth"
-PAIRING_CLIENT_NAME = "Wrist Assistant QR Pairing"
+PAIRING_CLIENT_NAME = "Wrist Assistant Pairing"
 PAIRING_DEFAULT_LIFESPAN_DAYS = 3650
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,7 +59,7 @@ class DeltaEvent:
 
 @dataclass(slots=True)
 class PairingSession:
-    """Single-use QR pairing payload."""
+    """Single-use pairing payload."""
 
     code: str
     refresh_token_id: str
@@ -445,7 +443,6 @@ class PairingCoordinator:
         self._default_remote_url = ""
         self._default_home_assistant_url = ""
         self._default_lifespan_days = PAIRING_DEFAULT_LIFESPAN_DAYS
-        self._viewer_secret: str = secrets.token_urlsafe(32)
 
     @callback
     def async_add_active_listener(self, cb: callback) -> callback:
@@ -476,32 +473,6 @@ class PairingCoordinator:
         self._default_lifespan_days = lifespan_days
 
     @property
-    def viewer_secret(self) -> str:
-        """Return the stable viewer secret for QR image URLs."""
-        return self._viewer_secret
-
-    def async_verify_viewer_secret(self, secret: str | None) -> bool:
-        """Constant-time comparison of viewer secret."""
-        if not secret:
-            return False
-        return secrets.compare_digest(secret, self._viewer_secret)
-
-    async def async_ensure_active_pairing(self) -> bool:
-        """Ensure an active, non-expired pairing code exists.
-
-        If the current code is expired or missing, auto-refresh using defaults.
-        Returns True if an active code is available afterward.
-        """
-        if self._active_code and self._active_code in self._sessions:
-            session = self._sessions[self._active_code]
-            if session.expires_at > dt_util.utcnow():
-                return True
-        # Code is missing or expired — refresh transparently.
-        self._prune_expired()
-        result = await self.async_refresh_active_pairing_default()
-        return result is not None
-
-    @property
     def active_payload(self) -> dict[str, Any] | None:
         """Return currently active pairing payload."""
         if self._active_code is None:
@@ -527,7 +498,7 @@ class PairingCoordinator:
         remote_url: str,
         lifespan_days: int = PAIRING_DEFAULT_LIFESPAN_DAYS,
     ) -> dict[str, Any]:
-        """Create a one-time code and return a QR payload URI."""
+        """Create a one-time code and return a pairing payload."""
         self._prune_expired()
 
         code = secrets.token_urlsafe(24)
@@ -551,15 +522,15 @@ class PairingCoordinator:
             lifespan_days=lifespan_days,
         )
 
-        qr_params: dict[str, str] = {
+        params: dict[str, str] = {
             "code": code,
             "base_url": home_assistant_url,
         }
         if local_url:
-            qr_params["local_url"] = local_url
+            params["local_url"] = local_url
         if remote_url:
-            qr_params["remote_url"] = remote_url
-        uri_query = urlencode(qr_params)
+            params["remote_url"] = remote_url
+        uri_query = urlencode(params)
         return {
             "pairing_code": code,
             "pairing_uri": f"wristassistant://pair?{uri_query}",
@@ -666,7 +637,7 @@ class PairingCoordinator:
 
     @callback
     def async_code_was_active(self, code: str) -> bool:
-        """Return whether redeemed code was the active QR code."""
+        """Return whether redeemed code was the active pairing code."""
         return code == self._active_code
 
     @callback
@@ -676,44 +647,6 @@ class PairingCoordinator:
         self._active_payload = None
         self._fire_active_callbacks()
         
-    def svg_qr_bytes(self, payload: dict[str, Any] | None = None) -> bytes:
-        """Render the active pairing URI as an SVG QR image."""
-        active = payload or self.active_payload
-        if active is None:
-            return self._empty_qr_svg("No active pairing code")
-        pairing_uri = active.get("pairing_uri", "")
-        if not pairing_uri:
-            return self._empty_qr_svg("Missing pairing URI")
-
-        import segno  # noqa: PLC0415
-
-        qr = segno.make(pairing_uri, micro=False, error="M")
-        output = io.BytesIO()
-        qr.save(output, kind="svg", scale=8, border=2)
-        return output.getvalue()
-
-    def connection_info_payload(self) -> dict[str, Any]:
-        """Build a URL-only connection info JSON payload."""
-        return {
-            "ha_url_local": self._default_local_url or None,
-            "ha_url_cloud": None,
-            "ha_url_remote": self._default_remote_url or None,
-            "features": ["wrist_assistant"],
-            "integration_version": "0.7.1",
-        }
-
-    def connection_info_qr_bytes(self) -> bytes:
-        """Render connection info JSON as an SVG QR image."""
-        payload = self.connection_info_payload()
-        data = json.dumps(payload, separators=(",", ":"))
-
-        import segno  # noqa: PLC0415
-
-        qr = segno.make(data, micro=False, error="M")
-        output = io.BytesIO()
-        qr.save(output, kind="svg", scale=8, border=2)
-        return output.getvalue()
-
     @callback
     def async_shutdown(self) -> None:
         """Revoke all unused pending pairing tokens."""
@@ -757,18 +690,6 @@ class PairingCoordinator:
         """Notify listeners about active pairing changes."""
         for cb in self._active_callbacks:
             cb()
-
-    @staticmethod
-    def _empty_qr_svg(message: str) -> bytes:
-        return (
-            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'>"
-            "<rect width='256' height='256' fill='#ffffff'/>"
-            "<text x='128' y='128' text-anchor='middle' dominant-baseline='middle' "
-            "font-family='sans-serif' font-size='14' fill='#222222'>"
-            f"{message}"
-            "</text></svg>"
-        ).encode("utf-8")
-
 
 class WatchUpdatesView(HomeAssistantView):
     """Authenticated long-poll endpoint for watch delta updates."""
@@ -897,61 +818,3 @@ class PairingRedeemView(HomeAssistantView):
         return self.json(token_payload, status_code=200)
 
 
-class PairingQRCodeView(HomeAssistantView):
-    """Endpoint returning current pairing QR SVG for a valid active code."""
-
-    url = "/api/wrist_assistant/pairing/qr.svg"
-    name = "api:wrist_assistant_pairing_qr"
-    requires_auth = False
-
-    def __init__(self, pairing: PairingCoordinator) -> None:
-        self._pairing = pairing
-
-    async def get(self, request: Request) -> Response:
-        """Return current pairing QR image.
-
-        Authenticated via a stable viewer secret so the URL never expires.
-        If the underlying pairing code is expired, it is auto-refreshed.
-        """
-        if not self._pairing.async_verify_viewer_secret(request.query.get("viewer")):
-            return Response(status=404)
-        await self._pairing.async_ensure_active_pairing()
-        svg = self._pairing.svg_qr_bytes()
-        return Response(
-            body=svg,
-            content_type="image/svg+xml",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
-
-
-class ConnectionInfoQRView(HomeAssistantView):
-    """Endpoint returning URL-only connection info QR SVG."""
-
-    url = "/api/wrist_assistant/connection_info/qr.svg"
-    name = "api:wrist_assistant_connection_info_qr"
-    requires_auth = False
-
-    def __init__(self, pairing: PairingCoordinator) -> None:
-        self._pairing = pairing
-
-    async def get(self, request: Request) -> Response:
-        """Return connection info QR image.
-
-        Authenticated via the same viewer secret as the pairing QR.
-        """
-        if not self._pairing.async_verify_viewer_secret(request.query.get("viewer")):
-            return Response(status=404)
-        svg = self._pairing.connection_info_qr_bytes()
-        return Response(
-            body=svg,
-            content_type="image/svg+xml",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
