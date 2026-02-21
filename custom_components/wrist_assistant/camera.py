@@ -19,7 +19,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up Wrist Assistant camera entities."""
     pairing: PairingCoordinator = hass.data[DOMAIN][DATA_PAIRING_COORDINATOR]
-    async_add_entities([PairingQRCamera(pairing, entry)])
+    async_add_entities([
+        PairingQRCamera(pairing, entry),
+        ConnectionQRCamera(pairing, entry),
+    ])
 
 
 class PairingQRCamera(Camera):
@@ -68,3 +71,32 @@ class PairingQRCamera(Camera):
             "active_pairing": True,
             "expires_at": payload.get("expires_at"),
         }
+
+
+class ConnectionQRCamera(Camera):
+    """Camera that renders URL-only connection info as QR."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Connection QR"
+    _attr_should_poll = False
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, pairing: PairingCoordinator, entry: ConfigEntry) -> None:
+        super().__init__()
+        self._pairing = pairing
+        self._entry = entry
+        self._attr_unique_id = f"wrist_assistant_{entry.entry_id}_connection_qr"
+        self.content_type = "image/svg+xml"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Wrist Assistant",
+            manufacturer="Wrist Assistant",
+            model="Delta Coordinator",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes:
+        """Return connection info QR image as SVG."""
+        return self._pairing.connection_info_qr_bytes()

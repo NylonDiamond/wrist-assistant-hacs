@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import io
+import json
 import logging
 import secrets
 from typing import Any
@@ -691,6 +692,28 @@ class PairingCoordinator:
         qr.save(output, kind="svg", scale=8, border=2)
         return output.getvalue()
 
+    def connection_info_payload(self) -> dict[str, Any]:
+        """Build a URL-only connection info JSON payload."""
+        return {
+            "ha_url_local": self._default_local_url or None,
+            "ha_url_cloud": None,
+            "ha_url_remote": self._default_remote_url or None,
+            "features": ["wrist_assistant"],
+            "integration_version": "0.7.1",
+        }
+
+    def connection_info_qr_bytes(self) -> bytes:
+        """Render connection info JSON as an SVG QR image."""
+        payload = self.connection_info_payload()
+        data = json.dumps(payload, separators=(",", ":"))
+
+        import segno  # noqa: PLC0415
+
+        qr = segno.make(data, micro=False, error="M")
+        output = io.BytesIO()
+        qr.save(output, kind="svg", scale=8, border=2)
+        return output.getvalue()
+
     @callback
     def async_shutdown(self) -> None:
         """Revoke all unused pending pairing tokens."""
@@ -894,6 +917,35 @@ class PairingQRCodeView(HomeAssistantView):
             return Response(status=404)
         await self._pairing.async_ensure_active_pairing()
         svg = self._pairing.svg_qr_bytes()
+        return Response(
+            body=svg,
+            content_type="image/svg+xml",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+
+class ConnectionInfoQRView(HomeAssistantView):
+    """Endpoint returning URL-only connection info QR SVG."""
+
+    url = "/api/wrist_assistant/connection_info/qr.svg"
+    name = "api:wrist_assistant_connection_info_qr"
+    requires_auth = False
+
+    def __init__(self, pairing: PairingCoordinator) -> None:
+        self._pairing = pairing
+
+    async def get(self, request: Request) -> Response:
+        """Return connection info QR image.
+
+        Authenticated via the same viewer secret as the pairing QR.
+        """
+        if not self._pairing.async_verify_viewer_secret(request.query.get("viewer")):
+            return Response(status=404)
+        svg = self._pairing.connection_info_qr_bytes()
         return Response(
             body=svg,
             content_type="image/svg+xml",

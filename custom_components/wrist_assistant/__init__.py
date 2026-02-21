@@ -24,6 +24,7 @@ from homeassistant.helpers import network
 
 from .api import (
     PAIRING_CLIENT_ID,
+    ConnectionInfoQRView,
     DeltaCoordinator,
     PairingCoordinator,
     PairingQRCodeView,
@@ -37,6 +38,7 @@ from .const import (
     PLATFORMS,
     SERVICE_CREATE_PAIRING_CODE,
     SERVICE_FORCE_RESYNC,
+    SETUP_QR_DATA_KEY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +72,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _cleanup_orphaned_entities(hass, entry)
     _disable_noisy_entities(hass, entry)
 
+    # Clean up temporary setup QR data from config flow
+    hass.data.setdefault(DOMAIN, {}).pop(SETUP_QR_DATA_KEY, None)
+
     coordinator = DeltaCoordinator(hass)
     pairing_coordinator = PairingCoordinator(hass)
     hass.data.setdefault(DOMAIN, {})
@@ -78,6 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(WatchUpdatesView(coordinator))
     hass.http.register_view(PairingRedeemView(pairing_coordinator))
     hass.http.register_view(PairingQRCodeView(pairing_coordinator))
+    hass.http.register_view(ConnectionInfoQRView(pairing_coordinator))
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
@@ -121,7 +127,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             lifespan_days=3650,
         )
 
-    _show_pairing_notification(hass, entry, pairing_coordinator)
+    if not entry.data.get("initial_setup_done"):
+        _show_pairing_notification(hass, entry, pairing_coordinator)
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, "initial_setup_done": True}
+        )
 
     async def _handle_force_resync(call: ServiceCall) -> None:
         coordinator.async_force_resync()
@@ -317,10 +327,14 @@ def _show_pairing_notification(
     """Show persistent pairing notification with auto-refreshing QR."""
     qr_path = f"/api/wrist_assistant/pairing/qr.svg?viewer={pairing.viewer_secret}"
     message = (
-        "Scan this QR in Wrist Assistant app:\n\n"
+        "### Long-Lived Access Token (recommended)\n\n"
+        "Open the Wrist Assistant app and choose **Long-Lived Access Token**, "
+        "then tap **Scan Integration QR**.\n\n"
         f"![Wrist Assistant Pairing QR]({qr_path})\n\n"
-        "App path: **Connect -> Sign in -> Scan QR**\n\n"
-        "The QR code refreshes automatically."
+        "The QR code refreshes automatically.\n\n"
+        "### OAuth\n\n"
+        "Choose **OAuth** in the app — no QR needed. "
+        "The app will open your Home Assistant login page directly."
     )
     persistent_notification.async_create(
         hass,
