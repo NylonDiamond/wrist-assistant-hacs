@@ -26,27 +26,23 @@ Use this for each GitHub release. HACS users read this before updating.
 
 ## Changed
 
-- Behavior updates that are not fixes (for example: URL discovery logic, setup flow adjustments).
+- Behavior updates that are not fixes (for example: setup flow adjustments and quality-of-life improvements).
 
 ## Fixed
 
-- Bug fixes (for example: stale cursor handling, QR refresh behavior, async/runtime issues).
+- Bug fixes users can notice (for example: reconnect issues, setup friction, reliability problems).
 
-## Pairing and onboarding
+## Setup and onboarding
 
-- QR pairing flow updates, token handling, URL fields, notification behavior.
+- Pairing experience updates, setup clarity, and first-run improvements.
 
-## Watch sync and reliability
+## Watch experience and reliability
 
-- Delta sync stability, 204/410 handling, session lifecycle, reconnect behavior.
+- Responsiveness, consistency, reconnect behavior, and overall watch experience quality.
 
 ## Diagnostics and observability
 
 - Sensor/entity diagnostics, per-watch visibility, troubleshooting helpers.
-
-## Internal and maintenance (optional)
-
-- Validation/workflow/refactor work that may matter to advanced users.
 
 ## Breaking changes
 
@@ -67,5 +63,5 @@ Use this for each GitHub release. HACS users read this before updating.
 
 - Mention if Home Assistant minimum version changed.
 - Mention if users need to re-pair.
-- Mention if any service/entity names changed.
+- Mention if any user-facing names changed.
 - Keep final notes concise (usually 5-12 bullets total).
