@@ -6,13 +6,13 @@ import asyncio
 from dataclasses import dataclass, field
 from io import BytesIO
 import logging
-from typing import Any
-
 from aiohttp.web import Request, Response, StreamResponse
 from PIL import Image
 
+from homeassistant.components.camera import Image as CameraImage, async_get_image
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -189,7 +189,6 @@ class CameraStreamView(HomeAssistantView):
         await response.prepare(request)
 
         frame_interval = 1.0 / fps
-        camera_component = self._hass.components.camera
 
         try:
             while True:
@@ -199,9 +198,9 @@ class CameraStreamView(HomeAssistantView):
                 current_quality = session.quality
 
                 try:
-                    # Get frame from HA camera component
-                    image = await camera_component.async_get_image(
-                        self._hass, entity_id
+                    # Get frame from HA camera platform
+                    image: CameraImage = await async_get_image(
+                        self._hass, entity_id, timeout=5
                     )
                     if image is None or image.content is None:
                         await asyncio.sleep(frame_interval)
@@ -226,6 +225,8 @@ class CameraStreamView(HomeAssistantView):
 
                 except (ConnectionResetError, ConnectionAbortedError):
                     break
+                except HomeAssistantError:
+                    _LOGGER.debug("Camera unavailable for %s, retrying", entity_id)
                 except Exception:  # noqa: BLE001
                     _LOGGER.debug("Frame error for %s, continuing", entity_id)
 
