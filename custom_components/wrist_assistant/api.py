@@ -136,6 +136,7 @@ class DeltaCoordinator:
         config_hash: str,
         entities: list[str] | None,
         timeout: int,
+        force_delta: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -211,6 +212,17 @@ class DeltaCoordinator:
                 next_cursor=str(next_cursor),
                 need_entities=False,
                 resync_required=False,
+                include_details=force_delta,
+            )
+
+        # Force delta: skip long-poll wait, return immediately with detailed info_summary
+        if force_delta:
+            return 200, self._response_payload(
+                events=[],
+                next_cursor=str(next_cursor),
+                need_entities=False,
+                resync_required=False,
+                include_details=True,
             )
 
         deadline = self.hass.loop.time() + timeout
@@ -382,20 +394,106 @@ class DeltaCoordinator:
         if expired:
             self._fire_session_callbacks()
 
-    @staticmethod
     def _response_payload(
+        self,
         events: list[dict[str, Any]],
         next_cursor: str,
         need_entities: bool,
         resync_required: bool,
+        include_details: bool = False,
     ) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "events": events,
             "next_cursor": next_cursor,
             "need_entities": need_entities,
             "resync_required": resync_required,
             "capabilities": ["smart_camera_stream"],
         }
+        payload["info_summary"] = self._compute_info_summary(include_details=include_details)
+        return payload
+
+    def _compute_info_summary(self, *, include_details: bool = False) -> dict[str, Any]:
+        """Compute domain summaries from HA state machine (in-memory, instant)."""
+        summary: dict[str, Any] = {}
+
+        # Lights
+        light_states = [
+            s for s in self.hass.states.async_all("light")
+            if s.entity_id.startswith("light.")
+        ]
+        light_on = sum(1 for s in light_states if s.state == "on")
+        light_data: dict[str, Any] = {"on": light_on, "total": len(light_states)}
+        if include_details:
+            light_data["entities"] = [
+                {
+                    "entity_id": s.entity_id,
+                    "state": s.state,
+                    "name": s.attributes.get("friendly_name", s.entity_id),
+                    "brightness": s.attributes.get("brightness"),
+                }
+                for s in light_states
+            ]
+        summary["light"] = light_data
+
+        # Persons
+        person_states = [
+            s for s in self.hass.states.async_all("person")
+            if s.entity_id.startswith("person.")
+        ]
+        person_home = sum(1 for s in person_states if s.state == "home")
+        person_data: dict[str, Any] = {"home": person_home, "total": len(person_states)}
+        if include_details:
+            person_data["entities"] = [
+                {
+                    "entity_id": s.entity_id,
+                    "state": s.state,
+                    "name": s.attributes.get("friendly_name", s.entity_id),
+                }
+                for s in person_states
+            ]
+        summary["person"] = person_data
+
+        # Sensors (temperature/humidity)
+        sensor_states = [
+            s for s in self.hass.states.async_all("sensor")
+            if s.entity_id.startswith("sensor.")
+            and s.attributes.get("device_class") in ("temperature", "humidity")
+        ]
+        sensor_data: dict[str, Any] = {"total": len(sensor_states)}
+        if include_details:
+            sensor_data["entities"] = [
+                {
+                    "entity_id": s.entity_id,
+                    "state": s.state,
+                    "name": s.attributes.get("friendly_name", s.entity_id),
+                    "unit": s.attributes.get("unit_of_measurement"),
+                    "device_class": s.attributes.get("device_class"),
+                }
+                for s in sensor_states
+            ]
+        summary["sensor"] = sensor_data
+
+        # Binary sensors (door/window/opening)
+        binary_states = [
+            s for s in self.hass.states.async_all("binary_sensor")
+            if s.entity_id.startswith("binary_sensor.")
+            and s.attributes.get("device_class") in ("door", "window", "opening", "garage_door")
+        ]
+        binary_open = sum(1 for s in binary_states if s.state == "on")
+        binary_data: dict[str, Any] = {"open": binary_open, "total": len(binary_states)}
+        if include_details:
+            binary_data["entities"] = [
+                {
+                    "entity_id": s.entity_id,
+                    "state": s.state,
+                    "name": s.attributes.get("friendly_name", s.entity_id),
+                    "device_class": s.attributes.get("device_class"),
+                }
+                for s in binary_states
+            ]
+        summary["binary_sensor"] = binary_data
+
+        return summary
 
     def _state_to_payload(self, state: State) -> dict[str, Any]:
         """Return HA state payload shape expected by the watch client."""
@@ -678,12 +776,15 @@ class WatchUpdatesView(HomeAssistantView):
             return self.json_message("timeout must be an integer", status_code=400)
         timeout = max(MIN_TIMEOUT_SECONDS, min(timeout, MAX_TIMEOUT_SECONDS))
 
+        force_delta = payload.get("force_delta", False) is True
+
         status, body = await self._coordinator.handle_poll(
             watch_id=watch_id,
             since=since,
             config_hash=config_hash,
             entities=normalized_entities,
             timeout=timeout,
+            force_delta=force_delta,
         )
 
         if status == 204:
