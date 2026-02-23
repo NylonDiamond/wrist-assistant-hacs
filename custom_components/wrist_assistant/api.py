@@ -493,6 +493,41 @@ class DeltaCoordinator:
             ]
         summary["binary_sensor"] = binary_data
 
+        # Battery sensors (device_class=battery, state is numeric percentage)
+        LOW_BATTERY_THRESHOLD = 20
+        battery_states = [
+            s for s in self.hass.states.async_all("sensor")
+            if s.entity_id.startswith("sensor.")
+            and s.attributes.get("device_class") == "battery"
+        ]
+        # Parse numeric state values, skip unavailable/unknown
+        battery_levels: list[tuple[Any, float]] = []
+        for s in battery_states:
+            try:
+                level = float(s.state)
+                battery_levels.append((s, level))
+            except (ValueError, TypeError):
+                continue
+        low_count = sum(1 for _, lvl in battery_levels if lvl < LOW_BATTERY_THRESHOLD)
+        battery_data: dict[str, Any] = {"low": low_count, "total": len(battery_levels)}
+        if include_details:
+            # Only send entities below threshold (watch doesn't need healthy ones)
+            low_entities = [
+                (s, lvl) for s, lvl in battery_levels if lvl < LOW_BATTERY_THRESHOLD
+            ]
+            # Sort by level ascending (most critical first)
+            low_entities.sort(key=lambda x: x[1])
+            battery_data["entities"] = [
+                {
+                    "entity_id": s.entity_id,
+                    "state": s.state,
+                    "name": s.attributes.get("friendly_name", s.entity_id),
+                    "level": int(lvl),
+                }
+                for s, lvl in low_entities
+            ]
+        summary["battery"] = battery_data
+
         return summary
 
     def _state_to_payload(self, state: State) -> dict[str, Any]:
