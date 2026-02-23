@@ -29,7 +29,13 @@ from .api import (
     PairingRedeemView,
     WatchUpdatesView,
 )
+from .camera_stream import (
+    CameraStreamCoordinator,
+    CameraStreamView,
+    CameraViewportView,
+)
 from .const import (
+    DATA_CAMERA_STREAM_COORDINATOR,
     DATA_COORDINATOR,
     DATA_PAIRING_COORDINATOR,
     DOMAIN,
@@ -71,11 +77,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = DeltaCoordinator(hass)
     pairing_coordinator = PairingCoordinator(hass)
+    camera_stream_coordinator = CameraStreamCoordinator()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
+    hass.data[DOMAIN][DATA_CAMERA_STREAM_COORDINATOR] = camera_stream_coordinator
     hass.http.register_view(WatchUpdatesView(coordinator))
     hass.http.register_view(PairingRedeemView(pairing_coordinator))
+    hass.http.register_view(CameraStreamView(hass, camera_stream_coordinator))
+    hass.http.register_view(CameraViewportView(camera_stream_coordinator))
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
@@ -85,6 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _handle_stop(_event) -> None:
         coordinator.async_shutdown()
         pairing_coordinator.async_shutdown()
+        camera_stream_coordinator.shutdown()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _handle_stop)
@@ -156,6 +167,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if data and DATA_PAIRING_COORDINATOR in data:
             data[DATA_PAIRING_COORDINATOR].async_shutdown()
             data.pop(DATA_PAIRING_COORDINATOR, None)
+        if data and DATA_CAMERA_STREAM_COORDINATOR in data:
+            data[DATA_CAMERA_STREAM_COORDINATOR].shutdown()
+            data.pop(DATA_CAMERA_STREAM_COORDINATOR, None)
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )

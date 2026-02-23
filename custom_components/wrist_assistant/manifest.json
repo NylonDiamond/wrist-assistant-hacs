@@ -3,10 +3,10 @@
   "name": "Wrist Assistant",
   "codeowners": ["@NylonDiamond"],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": ["http", "camera"],
   "documentation": "https://github.com/NylonDiamond/homeassistant-wrist-assistant",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/NylonDiamond/homeassistant-wrist-assistant/issues",
-  "requirements": [],
-  "version": "0.7.4"
+  "requirements": ["Pillow>=10.0"],
+  "version": "0.7.5"
 }

@@ -394,6 +394,7 @@ class DeltaCoordinator:
             "next_cursor": next_cursor,
             "need_entities": need_entities,
             "resync_required": resync_required,
+            "capabilities": ["smart_camera_stream"],
         }
 
     def _state_to_payload(self, state: State) -> dict[str, Any]:
