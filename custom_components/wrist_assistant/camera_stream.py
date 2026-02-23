@@ -80,15 +80,22 @@ class CameraStreamCoordinator:
             session.fps = fps
         return session
 
-    def update_viewport(
-        self, watch_id: str, entity_id: str, viewport: ViewportState
+    def update_session(
+        self,
+        watch_id: str,
+        entity_id: str,
+        viewport: ViewportState | None = None,
+        width: int | None = None,
     ) -> bool:
-        """Update viewport for an active session. Returns True if session exists."""
+        """Update params for an active session. Returns True if session exists."""
         key = (watch_id, entity_id)
         session = self._sessions.get(key)
         if session is None:
             return False
-        session.viewport = viewport
+        if viewport is not None:
+            session.viewport = viewport
+        if width is not None:
+            session.width = int(_clamp(width, MIN_WIDTH, MAX_WIDTH))
         return True
 
     def remove_session(self, watch_id: str, entity_id: str) -> None:
@@ -251,7 +258,7 @@ class CameraViewportView(HomeAssistantView):
         self._coordinator = coordinator
 
     async def post(self, request: Request) -> Response:
-        """Update viewport for an active stream session."""
+        """Update stream params (viewport and/or width) for an active session."""
         try:
             payload = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -265,13 +272,21 @@ class CameraViewportView(HomeAssistantView):
         if not isinstance(entity_id, str) or not isinstance(watch_id, str):
             return self.json_message("entity_id and watch_id required", status_code=400)
 
-        viewport = ViewportState(
-            x=_clamp(float(payload.get("x", 0)), 0, 1),
-            y=_clamp(float(payload.get("y", 0)), 0, 1),
-            w=_clamp(float(payload.get("w", 1)), 0.01, 1),
-            h=_clamp(float(payload.get("h", 1)), 0.01, 1),
-        )
+        # Optional viewport
+        viewport = None
+        if any(k in payload for k in ("x", "y", "w", "h")):
+            viewport = ViewportState(
+                x=_clamp(float(payload.get("x", 0)), 0, 1),
+                y=_clamp(float(payload.get("y", 0)), 0, 1),
+                w=_clamp(float(payload.get("w", 1)), 0.01, 1),
+                h=_clamp(float(payload.get("h", 1)), 0.01, 1),
+            )
 
-        if self._coordinator.update_viewport(watch_id, entity_id, viewport):
+        # Optional width
+        width = None
+        if "width" in payload:
+            width = int(float(payload["width"]))
+
+        if self._coordinator.update_session(watch_id, entity_id, viewport=viewport, width=width):
             return self.json({"status": "ok"})
         return self.json_message("No active stream for this session", status_code=404)
