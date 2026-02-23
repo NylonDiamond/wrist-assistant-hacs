@@ -137,6 +137,7 @@ class DeltaCoordinator:
         entities: list[str] | None,
         timeout: int,
         force_delta: bool = False,
+        battery_threshold: int = 20,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -169,6 +170,7 @@ class DeltaCoordinator:
                 next_cursor=str(self._cursor),
                 need_entities=True,
                 resync_required=False,
+                battery_threshold=battery_threshold,
             )
 
         # When since is nil, the client is requesting a full state snapshot.
@@ -180,6 +182,7 @@ class DeltaCoordinator:
                 next_cursor=str(self._cursor),
                 need_entities=False,
                 resync_required=False,
+                battery_threshold=battery_threshold,
             )
 
         since_cursor, invalid_since = self._parse_since(
@@ -191,6 +194,7 @@ class DeltaCoordinator:
                 next_cursor=str(self._cursor),
                 need_entities=False,
                 resync_required=True,
+                battery_threshold=battery_threshold,
             )
 
         if self._is_stale_cursor(since_cursor):
@@ -199,6 +203,7 @@ class DeltaCoordinator:
                 next_cursor=str(self._cursor),
                 need_entities=False,
                 resync_required=True,
+                battery_threshold=battery_threshold,
             )
 
         events, next_cursor = self._collect_events(
@@ -213,6 +218,7 @@ class DeltaCoordinator:
                 need_entities=False,
                 resync_required=False,
                 include_details=force_delta,
+                battery_threshold=battery_threshold,
             )
 
         # Force delta: skip long-poll wait, return immediately with detailed info_summary
@@ -223,6 +229,7 @@ class DeltaCoordinator:
                 need_entities=False,
                 resync_required=False,
                 include_details=True,
+                battery_threshold=battery_threshold,
             )
 
         deadline = self.hass.loop.time() + timeout
@@ -246,6 +253,7 @@ class DeltaCoordinator:
                             next_cursor=str(next_cursor),
                             need_entities=False,
                             resync_required=False,
+                            battery_threshold=battery_threshold,
                         )
                     since_cursor = next_cursor
                     continue
@@ -269,6 +277,7 @@ class DeltaCoordinator:
                         next_cursor=str(next_cursor),
                         need_entities=False,
                         resync_required=False,
+                        battery_threshold=battery_threshold,
                     )
                 since_cursor = next_cursor
         except asyncio.CancelledError:
@@ -401,6 +410,7 @@ class DeltaCoordinator:
         need_entities: bool,
         resync_required: bool,
         include_details: bool = False,
+        battery_threshold: int = 20,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "events": events,
@@ -409,10 +419,10 @@ class DeltaCoordinator:
             "resync_required": resync_required,
             "capabilities": ["smart_camera_stream"],
         }
-        payload["info_summary"] = self._compute_info_summary(include_details=include_details)
+        payload["info_summary"] = self._compute_info_summary(include_details=include_details, battery_threshold=battery_threshold)
         return payload
 
-    def _compute_info_summary(self, *, include_details: bool = False) -> dict[str, Any]:
+    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20) -> dict[str, Any]:
         """Compute domain summaries from HA state machine (in-memory, instant)."""
         summary: dict[str, Any] = {}
 
@@ -467,7 +477,6 @@ class DeltaCoordinator:
                     "state": s.state,
                     "name": s.attributes.get("friendly_name", s.entity_id),
                     "unit": s.attributes.get("unit_of_measurement"),
-                    "device_class": s.attributes.get("device_class"),
                 }
                 for s in sensor_states
             ]
@@ -494,7 +503,7 @@ class DeltaCoordinator:
         summary["binary_sensor"] = binary_data
 
         # Battery sensors (device_class=battery, state is numeric percentage)
-        LOW_BATTERY_THRESHOLD = 20
+        LOW_BATTERY_THRESHOLD = battery_threshold
         battery_states = [
             s for s in self.hass.states.async_all("sensor")
             if s.entity_id.startswith("sensor.")
@@ -511,20 +520,16 @@ class DeltaCoordinator:
         low_count = sum(1 for _, lvl in battery_levels if lvl < LOW_BATTERY_THRESHOLD)
         battery_data: dict[str, Any] = {"low": low_count, "total": len(battery_levels)}
         if include_details:
-            # Only send entities below threshold (watch doesn't need healthy ones)
-            low_entities = [
-                (s, lvl) for s, lvl in battery_levels if lvl < LOW_BATTERY_THRESHOLD
-            ]
+            # Send all battery entities (watch filters by user-selected entity IDs)
             # Sort by level ascending (most critical first)
-            low_entities.sort(key=lambda x: x[1])
+            battery_levels.sort(key=lambda x: x[1])
             battery_data["entities"] = [
                 {
                     "entity_id": s.entity_id,
-                    "state": s.state,
                     "name": s.attributes.get("friendly_name", s.entity_id),
                     "level": int(lvl),
                 }
-                for s, lvl in low_entities
+                for s, lvl in battery_levels
             ]
         summary["battery"] = battery_data
 
@@ -812,6 +817,8 @@ class WatchUpdatesView(HomeAssistantView):
         timeout = max(MIN_TIMEOUT_SECONDS, min(timeout, MAX_TIMEOUT_SECONDS))
 
         force_delta = payload.get("force_delta", False) is True
+        raw_threshold = payload.get("battery_threshold", 20)
+        battery_threshold = max(5, min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20))
 
         status, body = await self._coordinator.handle_poll(
             watch_id=watch_id,
@@ -820,6 +827,7 @@ class WatchUpdatesView(HomeAssistantView):
             entities=normalized_entities,
             timeout=timeout,
             force_delta=force_delta,
+            battery_threshold=battery_threshold,
         )
 
         if status == 204:
