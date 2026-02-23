@@ -135,7 +135,7 @@ def _process_frame(
     if cur_w > width:
         ratio = width / cur_w
         new_h = max(1, int(cur_h * ratio))
-        img = img.resize((width, new_h), Image.LANCZOS)
+        img = img.resize((width, new_h), Image.BILINEAR)
 
     # Recompress as JPEG
     buf = BytesIO()
