@@ -138,6 +138,7 @@ class DeltaCoordinator:
         timeout: int,
         force_delta: bool = False,
         battery_threshold: int = 20,
+        summary_entities: dict[str, list[str]] | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -171,6 +172,7 @@ class DeltaCoordinator:
                 need_entities=True,
                 resync_required=False,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         # When since is nil, the client is requesting a full state snapshot.
@@ -183,6 +185,7 @@ class DeltaCoordinator:
                 need_entities=False,
                 resync_required=False,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         since_cursor, invalid_since = self._parse_since(
@@ -195,6 +198,7 @@ class DeltaCoordinator:
                 need_entities=False,
                 resync_required=True,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         if self._is_stale_cursor(since_cursor):
@@ -204,6 +208,7 @@ class DeltaCoordinator:
                 need_entities=False,
                 resync_required=True,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         events, next_cursor = self._collect_events(
@@ -219,6 +224,7 @@ class DeltaCoordinator:
                 resync_required=False,
                 include_details=force_delta,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         # Force delta: skip long-poll wait, return immediately with detailed info_summary
@@ -230,6 +236,7 @@ class DeltaCoordinator:
                 resync_required=False,
                 include_details=True,
                 battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
             )
 
         deadline = self.hass.loop.time() + timeout
@@ -254,6 +261,7 @@ class DeltaCoordinator:
                             need_entities=False,
                             resync_required=False,
                             battery_threshold=battery_threshold,
+                            summary_entities=summary_entities,
                         )
                     since_cursor = next_cursor
                     continue
@@ -278,6 +286,7 @@ class DeltaCoordinator:
                         need_entities=False,
                         resync_required=False,
                         battery_threshold=battery_threshold,
+                        summary_entities=summary_entities,
                     )
                 since_cursor = next_cursor
         except asyncio.CancelledError:
@@ -411,6 +420,7 @@ class DeltaCoordinator:
         resync_required: bool,
         include_details: bool = False,
         battery_threshold: int = 20,
+        summary_entities: dict[str, list[str]] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "events": events,
@@ -419,21 +429,37 @@ class DeltaCoordinator:
             "resync_required": resync_required,
             "capabilities": ["smart_camera_stream"],
         }
-        payload["info_summary"] = self._compute_info_summary(include_details=include_details, battery_threshold=battery_threshold)
+        payload["info_summary"] = self._compute_info_summary(
+            include_details=include_details,
+            battery_threshold=battery_threshold,
+            summary_entities=summary_entities,
+        )
         return payload
 
-    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20) -> dict[str, Any]:
-        """Compute domain summaries from HA state machine (in-memory, instant)."""
+    def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None) -> dict[str, Any]:
+        """Compute domain summaries from HA state machine (in-memory, instant).
+
+        When summary_entities is provided, filter each domain to only the requested
+        entity IDs and recompute counts from the filtered set. Entity details are
+        always included for filtered domains (the caller asked for specific entities).
+        """
         summary: dict[str, Any] = {}
+        light_filter = (summary_entities or {}).get("light")
+        person_filter = (summary_entities or {}).get("person")
+        sensor_filter = (summary_entities or {}).get("sensor")
+        binary_filter = (summary_entities or {}).get("binary_sensor")
 
         # Lights
         light_states = [
             s for s in self.hass.states.async_all("light")
             if s.entity_id.startswith("light.")
         ]
+        if light_filter:
+            light_filter_set = set(light_filter)
+            light_states = [s for s in light_states if s.entity_id in light_filter_set]
         light_on = sum(1 for s in light_states if s.state == "on")
         light_data: dict[str, Any] = {"on": light_on, "total": len(light_states)}
-        if include_details:
+        if include_details or light_filter:
             light_data["entities"] = [
                 {
                     "entity_id": s.entity_id,
@@ -450,9 +476,12 @@ class DeltaCoordinator:
             s for s in self.hass.states.async_all("person")
             if s.entity_id.startswith("person.")
         ]
+        if person_filter:
+            person_filter_set = set(person_filter)
+            person_states = [s for s in person_states if s.entity_id in person_filter_set]
         person_home = sum(1 for s in person_states if s.state == "home")
         person_data: dict[str, Any] = {"home": person_home, "total": len(person_states)}
-        if include_details:
+        if include_details or person_filter:
             person_data["entities"] = [
                 {
                     "entity_id": s.entity_id,
@@ -469,8 +498,11 @@ class DeltaCoordinator:
             if s.entity_id.startswith("sensor.")
             and s.attributes.get("device_class") in ("temperature", "humidity")
         ]
+        if sensor_filter:
+            sensor_filter_set = set(sensor_filter)
+            sensor_states = [s for s in sensor_states if s.entity_id in sensor_filter_set]
         sensor_data: dict[str, Any] = {"total": len(sensor_states)}
-        if include_details:
+        if include_details or sensor_filter:
             sensor_data["entities"] = [
                 {
                     "entity_id": s.entity_id,
@@ -488,9 +520,12 @@ class DeltaCoordinator:
             if s.entity_id.startswith("binary_sensor.")
             and s.attributes.get("device_class") in ("door", "window", "opening", "garage_door")
         ]
+        if binary_filter:
+            binary_filter_set = set(binary_filter)
+            binary_states = [s for s in binary_states if s.entity_id in binary_filter_set]
         binary_open = sum(1 for s in binary_states if s.state == "on")
         binary_data: dict[str, Any] = {"open": binary_open, "total": len(binary_states)}
-        if include_details:
+        if include_details or binary_filter:
             binary_data["entities"] = [
                 {
                     "entity_id": s.entity_id,
@@ -820,6 +855,16 @@ class WatchUpdatesView(HomeAssistantView):
         raw_threshold = payload.get("battery_threshold", 20)
         battery_threshold = max(5, min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20))
 
+        # Optional: per-domain entity filters for info_summary
+        # e.g. {"light": ["light.kitchen"], "person": ["person.jesse"], "sensor": ["sensor.temp"]}
+        raw_summary_entities = payload.get("summary_entities")
+        summary_entities: dict[str, list[str]] | None = None
+        if isinstance(raw_summary_entities, dict):
+            summary_entities = {}
+            for domain, ids in raw_summary_entities.items():
+                if isinstance(domain, str) and isinstance(ids, list):
+                    summary_entities[domain] = [eid for eid in ids if isinstance(eid, str) and eid]
+
         status, body = await self._coordinator.handle_poll(
             watch_id=watch_id,
             since=since,
@@ -828,6 +873,7 @@ class WatchUpdatesView(HomeAssistantView):
             timeout=timeout,
             force_delta=force_delta,
             battery_threshold=battery_threshold,
+            summary_entities=summary_entities,
         )
 
         if status == 204:
