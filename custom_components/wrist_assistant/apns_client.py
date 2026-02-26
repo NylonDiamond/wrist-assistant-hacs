@@ -31,12 +31,10 @@ class APNsClient:
     SSL setup during HA startup.
     """
 
-    def __init__(self) -> None:
-        if not _BUNDLED_KEY_PATH.is_file():
-            raise FileNotFoundError(f"Bundled APNs key not found at {_BUNDLED_KEY_PATH}")
+    def __init__(self, key_content: str) -> None:
         if not APNS_KEY_ID or not APNS_TEAM_ID:
             raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
-        self._key_content: str = _BUNDLED_KEY_PATH.read_text()
+        self._key_content = key_content
         self._production: APNs | None = None
         self._sandbox: APNs | None = None
 

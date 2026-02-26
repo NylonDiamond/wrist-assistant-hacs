@@ -119,8 +119,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(CameraBatchView(hass))
     hass.http.register_view(NotificationRegisterView(notification_store))
 
-    # APNs clients are created lazily on first send (SSL setup is blocking).
-    apns_client = _create_apns_client()
+    # APNs client – read key in executor to avoid blocking the event loop.
+    apns_client = await _create_apns_client(hass)
     if apns_client:
         hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
         _LOGGER.info("APNs client ready")
@@ -292,10 +292,13 @@ async def async_remove_config_entry_device(
     return True
 
 
-def _create_apns_client() -> APNsClient | None:
-    """Create APNs client with bundled key (handles both sandbox + production)."""
+async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
+    """Create APNs client, reading the bundled key off the event loop."""
+    from .apns_client import _BUNDLED_KEY_PATH  # noqa: WPS433
+
     try:
-        return APNsClient()
+        key_content = await hass.async_add_executor_job(_BUNDLED_KEY_PATH.read_text)
+        return APNsClient(key_content)
     except Exception:
         _LOGGER.exception("Failed to create APNs client")
         return None
