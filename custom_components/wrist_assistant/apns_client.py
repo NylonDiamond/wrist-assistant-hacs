@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from pathlib import Path
 
 from aioapns import APNs, NotificationRequest, PushType
@@ -19,6 +20,13 @@ _DEAD_TOKEN_REASONS = frozenset({
     "Unregistered",
     "DeviceTokenNotForTopic",
 })
+
+
+def _warm_ssl_context() -> None:
+    """Pre-load system SSL certs so APNs() doesn't block the event loop."""
+    ctx = ssl.create_default_context()
+    # Force cert loading now (this is the blocking part)
+    ctx.load_default_certs()
 
 
 class APNsClient:
