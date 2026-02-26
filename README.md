@@ -80,6 +80,44 @@ data:
     entity_id: "light.living_room"
 ```
 
+**Grouped notifications (same thread in notification center):**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  title: "Security"
+  message: "Motion detected in backyard"
+  group: "security"
+  sound: "default"
+```
+
+**Replacing notifications (same tag overwrites previous):**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  title: "Garage"
+  message: "Garage door open for 10 minutes"
+  tag: "garage_status"
+  category: "CLOSE_CONTROL"
+  data:
+    entity_id: "cover.garage_door"
+```
+
+**Time-sensitive alert (breaks through Focus/DND):**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  title: "Alarm"
+  message: "Motion detected while armed away"
+  priority: "time-sensitive"
+  sound: "default"
+  category: "ALARM_CONTROL"
+  data:
+    entity_id: "alarm_control_panel.home"
+```
+
 **Silent background update:**
 
 ```yaml
@@ -94,10 +132,44 @@ data:
 | `message` | Yes | Notification body text |
 | `title` | No | Notification title |
 | `target` | No | Watch ID — omit to send to all watches |
-| `category` | No | `ENTITY_TOGGLE`, `LOCK_CONTROL`, `ALARM_CONTROL`, `CONFIRM_ACTION`, `SCENE_ACTIVATE`, or `HA_CUSTOM` |
+| `category` | No | `ENTITY_TOGGLE`, `ENTITY_TURN_ON`, `ENTITY_TURN_OFF`, `OPEN_CONTROL`, `CLOSE_CONTROL`, `LOCK_CONTROL`, `UNLOCK_CONTROL`, `ALARM_CONTROL`, `CONFIRM_ACTION`, `SCENE_ACTIVATE`, or `HA_CUSTOM` |
 | `data` | No | Extra payload (e.g. `entity_id`, `domain`, `service`, `actions`) |
 | `sound` | No | `"default"` for system sound, omit for silent |
 | `push_type` | No | `"alert"` (default) or `"background"` for silent updates |
+| `tag` | No | Collapse ID — new notification with same tag replaces the previous one |
+| `group` | No | Thread ID — groups related notifications together in notification center |
+| `priority` | No | `"passive"`, `"active"` (default), `"time-sensitive"` (breaks DND), or `"critical"` |
+
+## Events
+
+### `wrist_assistant_action_completed`
+
+Fired on the Home Assistant event bus when a notification action is executed on the watch. Use this in automations to confirm actions succeeded or handle failures.
+
+| Field | Description |
+|-------|-------------|
+| `action` | The action identifier (e.g. `TOGGLE_ENTITY`, `TURN_ON_ENTITY`) |
+| `entity_id` | The entity the action targeted (empty string if none) |
+| `success` | `true` if the action succeeded, `false` on failure |
+| `error` | Error message on failure, absent on success |
+| `source` | Always `"watch_notification"` |
+
+**Example automation — confirm toggle worked:**
+
+```yaml
+automation:
+  - alias: "Log notification actions"
+    trigger:
+      - platform: event
+        event_type: wrist_assistant_action_completed
+    action:
+      - service: logbook.log
+        data:
+          name: "Watch Action"
+          message: >
+            {{ trigger.event.data.action }} on {{ trigger.event.data.entity_id }}
+            — {{ 'OK' if trigger.event.data.success else trigger.event.data.error }}
+```
 
 ### `wrist_assistant.create_pairing_code`
 

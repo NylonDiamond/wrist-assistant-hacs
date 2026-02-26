@@ -74,7 +74,12 @@ send_notification:
         select:
           options:
             - "ENTITY_TOGGLE"
+            - "ENTITY_TURN_ON"
+            - "ENTITY_TURN_OFF"
+            - "OPEN_CONTROL"
+            - "CLOSE_CONTROL"
             - "LOCK_CONTROL"
+            - "UNLOCK_CONTROL"
             - "ALARM_CONTROL"
             - "CONFIRM_ACTION"
             - "SCENE_ACTIVATE"
@@ -104,3 +109,32 @@ send_notification:
           options:
             - "alert"
             - "background"
+    tag:
+      name: Tag
+      description: >-
+        Collapse identifier. Sending a new notification with the same tag
+        replaces the previous one instead of stacking.
+      example: "front_door_alert"
+      selector:
+        text:
+    group:
+      name: Group
+      description: >-
+        Thread identifier for grouping related notifications together
+        in the watch notification center.
+      example: "security"
+      selector:
+        text:
+    priority:
+      name: Priority
+      description: >-
+        Interruption level. "passive" delivers silently, "active" (default)
+        is standard, "time-sensitive" breaks through Focus/DND,
+        "critical" overrides mute (requires entitlement).
+      selector:
+        select:
+          options:
+            - "passive"
+            - "active"
+            - "time-sensitive"
+            - "critical"

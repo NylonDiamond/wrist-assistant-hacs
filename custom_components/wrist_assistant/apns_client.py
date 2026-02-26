@@ -101,6 +101,25 @@ class APNsClient:
         if push_type == "background":
             aps["content-available"] = 1
 
+        # Extract grouping/priority fields from data before merging
+        collapse_key: str | None = None
+        if data:
+            data = dict(data)  # Don't mutate caller's dict
+            if group := data.pop("group", None):
+                aps["thread-id"] = group
+            if tag := data.pop("tag", None):
+                collapse_key = tag
+            if priority := data.pop("priority", None):
+                valid_levels = ("passive", "active", "time-sensitive", "critical")
+                if priority in valid_levels:
+                    aps["interruption-level"] = priority
+                else:
+                    _LOGGER.warning(
+                        "Ignoring invalid interruption-level '%s' (valid: %s)",
+                        priority,
+                        ", ".join(valid_levels),
+                    )
+
         message: dict = {"aps": aps}
         if data:
             for key, value in data.items():
@@ -112,6 +131,7 @@ class APNsClient:
             device_token=device_token,
             message=message,
             push_type=apns_push_type,
+            collapse_key=collapse_key,
         )
 
         success, reason = await self._send_once(request, device_token, environment)

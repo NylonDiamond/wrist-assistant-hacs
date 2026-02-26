@@ -86,6 +86,11 @@ _SEND_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Optional("data"): dict,
         vol.Optional("sound"): cv.string,
         vol.Optional("push_type", default="alert"): vol.In(["alert", "background"]),
+        vol.Optional("tag"): cv.string,
+        vol.Optional("group"): cv.string,
+        vol.Optional("priority"): vol.In(
+            ["passive", "active", "time-sensitive", "critical"]
+        ),
     }
 )
 
@@ -203,7 +208,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         message = call.data["message"]
         title = call.data.get("title")
         category = call.data.get("category")
-        extra_data = call.data.get("data")
+        extra_data = dict(call.data.get("data") or {})
+        for key in ("tag", "group", "priority"):
+            if (val := call.data.get(key)) is not None:
+                extra_data[key] = val
+        extra_data = extra_data or None
         sound = call.data.get("sound")
         push_type = call.data.get("push_type", "alert")
 
