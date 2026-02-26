@@ -120,7 +120,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(NotificationRegisterView(notification_store))
 
     # Create APNs client (bundled key, handles both sandbox + production)
-    apns_client = _create_apns_client()
+    # APNs() does blocking SSL setup, so run in executor to avoid blocking the event loop.
+    apns_client = await hass.async_add_executor_job(_create_apns_client)
     if apns_client:
         hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
         _LOGGER.info("APNs client ready")
