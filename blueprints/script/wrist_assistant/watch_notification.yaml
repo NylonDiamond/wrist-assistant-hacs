@@ -91,10 +91,12 @@ blueprint:
     target:
       name: Target Watch
       description: >
-        Watch ID to send to. Leave empty to send to all registered watches.
+        Watch to send to. Leave empty to send to all registered watches.
       default: ""
       selector:
-        text:
+        device:
+          filter:
+            - integration: wrist_assistant
     tag:
       name: Tag
       description: >
@@ -119,20 +121,45 @@ blueprint:
       default: ""
       selector:
         entity:
-    action_domain:
-      name: Action Domain
-      description: >
-        Service domain for the Confirm Action category (e.g. light, switch).
-      default: ""
-      selector:
-        text:
     action_service:
       name: Action Service
       description: >
-        Service name for the Confirm Action category (e.g. turn_on, toggle).
+        Service for the Confirm Action category. Domain is auto-detected
+        from the Action Entity.
       default: ""
       selector:
-        text:
+        select:
+          custom_value: true
+          mode: dropdown
+          options:
+            - label: "None"
+              value: ""
+            - label: "Turn On"
+              value: "turn_on"
+            - label: "Turn Off"
+              value: "turn_off"
+            - label: "Toggle"
+              value: "toggle"
+            - label: "Open Cover"
+              value: "open_cover"
+            - label: "Close Cover"
+              value: "close_cover"
+            - label: "Lock"
+              value: "lock"
+            - label: "Unlock"
+              value: "unlock"
+            - label: "Arm Home"
+              value: "alarm_arm_home"
+            - label: "Arm Away"
+              value: "alarm_arm_away"
+            - label: "Disarm"
+              value: "alarm_disarm"
+            - label: "Start (vacuum)"
+              value: "start"
+            - label: "Pause (vacuum)"
+              value: "pause"
+            - label: "Return to Base (vacuum)"
+              value: "return_to_base"
 
 mode: parallel
 max: 10
@@ -144,31 +171,28 @@ sequence:
       bp_category: !input category
       bp_priority: !input priority
       bp_sound: !input sound
-      bp_target: !input target
+      bp_target_device: !input target
       bp_tag: !input tag
       bp_group: !input group
       bp_action_entity: !input action_entity
-      bp_action_domain: !input action_domain
       bp_action_service: !input action_service
   - service: wrist_assistant.send_notification
-    data:
-      message: "{{ bp_message }}"
-      title: "{{ bp_title if bp_title else none }}"
-      category: "{{ bp_category if bp_category else none }}"
-      sound: "{{ bp_sound if bp_sound else none }}"
-      target: "{{ bp_target if bp_target else none }}"
-      priority: "{{ bp_priority }}"
-      tag: "{{ bp_tag if bp_tag else none }}"
-      group: "{{ bp_group if bp_group else none }}"
-      data: >-
-        {%- set ns = namespace(items=[]) -%}
-        {%- if bp_action_entity -%}
-          {%- set ns.items = ns.items + [("entity_id", bp_action_entity)] -%}
-        {%- endif -%}
-        {%- if bp_action_domain -%}
-          {%- set ns.items = ns.items + [("domain", bp_action_domain)] -%}
-        {%- endif -%}
-        {%- if bp_action_service -%}
-          {%- set ns.items = ns.items + [("service", bp_action_service)] -%}
-        {%- endif -%}
-        {{ dict(ns.items) if ns.items else none }}
+    data: >
+      {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
+      {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
+      {%- if bp_category %}{%- set d.items = d.items + [("category", bp_category)] -%}{%- endif -%}
+      {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}
+      {%- if bp_target_device -%}
+        {%- set ids = device_attr(bp_target_device, 'identifiers') | list -%}
+        {%- if ids %}{%- set d.items = d.items + [("target", ids[0][1] | replace('watch_', ''))] -%}{%- endif -%}
+      {%- endif -%}
+      {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
+      {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
+      {%- set extra = namespace(items=[]) -%}
+      {%- if bp_action_entity -%}
+        {%- set extra.items = extra.items + [("entity_id", bp_action_entity)] -%}
+        {%- set extra.items = extra.items + [("domain", bp_action_entity.split('.')[0])] -%}
+      {%- endif -%}
+      {%- if bp_action_service %}{%- set extra.items = extra.items + [("service", bp_action_service)] -%}{%- endif -%}
+      {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
+      {{ dict(d.items) }}
