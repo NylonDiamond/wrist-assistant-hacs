@@ -75,8 +75,14 @@ class APNsClient:
         sound: str | None = None,
         push_type: str = "alert",
         environment: str = "production",
-    ) -> tuple[bool, str | None]:
-        """Send a push notification. Returns (success, reason)."""
+    ) -> tuple[bool, str | None, str]:
+        """Send a push notification.
+
+        Returns (success, reason, used_environment). On BadDeviceToken the
+        opposite environment is tried automatically — if it succeeds,
+        ``used_environment`` will differ from the requested one so the
+        caller can update its records.
+        """
         alert: dict | None = None
         if title or body:
             alert = {}
@@ -108,8 +114,32 @@ class APNsClient:
             push_type=apns_push_type,
         )
 
-        client = self._get_client(environment)
+        success, reason = await self._send_once(request, device_token, environment)
+        if success:
+            return (True, None, environment)
 
+        # On BadDeviceToken, try the other environment before giving up.
+        if reason == "BadDeviceToken":
+            alt = "development" if environment == "production" else "production"
+            alt_success, alt_reason = await self._send_once(request, device_token, alt)
+            if alt_success:
+                _LOGGER.info(
+                    "APNs push for %s… succeeded on %s (was registered as %s) — correcting",
+                    device_token[:8], alt, environment,
+                )
+                return (True, None, alt)
+            # Both failed — return the original reason (more relevant).
+
+        return (False, reason, environment)
+
+    async def _send_once(
+        self,
+        request: NotificationRequest,
+        device_token: str,
+        environment: str,
+    ) -> tuple[bool, str | None]:
+        """Try a single send attempt. Returns (success, reason)."""
+        client = self._get_client(environment)
         try:
             response = await client.send_notification(request)
         except Exception:

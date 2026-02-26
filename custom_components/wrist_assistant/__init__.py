@@ -222,7 +222,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Send to each target
         failures = []
         for watch_id, token_entry in targets.items():
-            success, reason = await client.send_push(
+            success, reason, used_env = await client.send_push(
                 device_token=token_entry.device_token,
                 title=title,
                 body=message,
@@ -232,7 +232,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 push_type=push_type,
                 environment=token_entry.environment,
             )
-            if not success:
+            if success:
+                if used_env != token_entry.environment:
+                    store.register(
+                        watch_id,
+                        token_entry.device_token,
+                        platform=token_entry.platform,
+                        environment=used_env,
+                    )
+            else:
                 if APNsClient.is_dead_token(reason):
                     _LOGGER.warning(
                         "Removing dead token for watch_id=%s (reason=%s)",
