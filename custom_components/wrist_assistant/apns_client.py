@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import ssl
 from pathlib import Path
 
 from aioapns import APNs, NotificationRequest, PushType
@@ -22,18 +21,14 @@ _DEAD_TOKEN_REASONS = frozenset({
 })
 
 
-def _warm_ssl_context() -> None:
-    """Pre-load system SSL certs so APNs() doesn't block the event loop."""
-    ctx = ssl.create_default_context()
-    # Force cert loading now (this is the blocking part)
-    ctx.load_default_certs()
-
-
 class APNsClient:
     """Wrapper around aioapns for sending push notifications.
 
     Maintains both a production and sandbox client internally so pushes
     are routed to the correct APNs gateway based on each token's environment.
+
+    APNs instances are created lazily on first send to avoid blocking
+    SSL setup during HA startup.
     """
 
     def __init__(self) -> None:
@@ -41,22 +36,30 @@ class APNsClient:
             raise FileNotFoundError(f"Bundled APNs key not found at {_BUNDLED_KEY_PATH}")
         if not APNS_KEY_ID or not APNS_TEAM_ID:
             raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
+        self._production: APNs | None = None
+        self._sandbox: APNs | None = None
 
-        key = str(_BUNDLED_KEY_PATH)
-        self._production = APNs(
-            key=key,
-            key_id=APNS_KEY_ID,
-            team_id=APNS_TEAM_ID,
-            topic=APNS_TOPIC,
-            use_sandbox=False,
-        )
-        self._sandbox = APNs(
-            key=key,
-            key_id=APNS_KEY_ID,
-            team_id=APNS_TEAM_ID,
-            topic=APNS_TOPIC,
-            use_sandbox=True,
-        )
+    def _get_client(self, environment: str) -> APNs:
+        """Return the APNs client for the given environment, creating lazily."""
+        if environment == "development":
+            if self._sandbox is None:
+                self._sandbox = APNs(
+                    key=str(_BUNDLED_KEY_PATH),
+                    key_id=APNS_KEY_ID,
+                    team_id=APNS_TEAM_ID,
+                    topic=APNS_TOPIC,
+                    use_sandbox=True,
+                )
+            return self._sandbox
+        if self._production is None:
+            self._production = APNs(
+                key=str(_BUNDLED_KEY_PATH),
+                key_id=APNS_KEY_ID,
+                team_id=APNS_TEAM_ID,
+                topic=APNS_TOPIC,
+                use_sandbox=False,
+            )
+        return self._production
 
     async def send_push(
         self,
@@ -101,7 +104,7 @@ class APNsClient:
             push_type=apns_push_type,
         )
 
-        client = self._sandbox if environment == "development" else self._production
+        client = self._get_client(environment)
 
         try:
             response = await client.send_notification(request)

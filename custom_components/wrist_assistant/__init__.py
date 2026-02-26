@@ -29,7 +29,7 @@ from .api import (
     PairingRedeemView,
     WatchUpdatesView,
 )
-from .apns_client import APNsClient, _warm_ssl_context
+from .apns_client import APNsClient
 from .camera_stream import (
     CameraBatchView,
     CameraStreamCoordinator,
@@ -119,8 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(CameraBatchView(hass))
     hass.http.register_view(NotificationRegisterView(notification_store))
 
-    # Pre-warm SSL certs in executor (blocking I/O), then create APNs client on event loop.
-    await hass.async_add_executor_job(_warm_ssl_context)
+    # APNs clients are created lazily on first send (SSL setup is blocking).
     apns_client = _create_apns_client()
     if apns_client:
         hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
