@@ -1,13 +1,16 @@
 blueprint:
-  name: "Wrist Assistant Watch Notification"
+  name: "⌚ Wrist Assistant – Watch Notification"
+  author: "Wrist Assistant"
   description: >
-    Create a reusable watch notification script. Call the resulting script
-    from any automation to send a push notification to your Apple Watch
-    via Wrist Assistant.
+    Send rich, actionable push notifications straight to your Apple Watch.
 
-    **Usage:** Settings → Automations & Scenes → Scripts → Add → Use Blueprint.
-    Fill in the message and any optional fields, save the script, then call it
-    as an action from any automation trigger.
+
+    Pick a **category** to add quick-action buttons (toggle, lock, vacuum, alarm, etc.)
+    and point them at any Home Assistant entity — no YAML required.
+
+
+    **Quick start:** fill in the message below, save the script, then call it
+    from any automation.
   domain: script
   input:
     message:
