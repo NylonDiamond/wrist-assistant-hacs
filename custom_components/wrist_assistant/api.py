@@ -959,12 +959,19 @@ class WatchUpdatesView(HomeAssistantView):
     name = "api:wrist_assistant_updates"
     requires_auth = True
 
-    def __init__(self, coordinator: DeltaCoordinator, notification_store: "NotificationTokenStore | None" = None) -> None:
-        self._coordinator = coordinator
-        self._notification_store = notification_store
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
 
     async def post(self, request: Request) -> Response:
         """Handle delta update poll request."""
+        from .const import DATA_COORDINATOR, DATA_NOTIFICATION_TOKEN_STORE, DOMAIN
+
+        domain_data = self._hass.data.get(DOMAIN, {})
+        coordinator = domain_data.get(DATA_COORDINATOR)
+        if coordinator is None:
+            return self.json_message("Integration not loaded", status_code=503)
+        notification_store = domain_data.get(DATA_NOTIFICATION_TOKEN_STORE)
+
         try:
             payload = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -1017,18 +1024,18 @@ class WatchUpdatesView(HomeAssistantView):
         # Piggyback device token registration on authenticated poll
         device_token = payload.get("device_token")
         if (
-            self._notification_store is not None
+            notification_store is not None
             and isinstance(device_token, str)
             and device_token
         ):
             apns_env = payload.get("apns_environment", "production")
             if apns_env not in ("development", "production"):
                 apns_env = "production"
-            self._notification_store.register(
+            notification_store.register(
                 watch_id, device_token, platform="watchos", environment=apns_env
             )
 
-        status, body = await self._coordinator.handle_poll(
+        status, body = await coordinator.handle_poll(
             watch_id=watch_id,
             since=since,
             config_hash=config_hash,
@@ -1072,11 +1079,17 @@ class PairingRedeemView(HomeAssistantView):
     name = "api:wrist_assistant_pairing_redeem"
     requires_auth = False
 
-    def __init__(self, pairing: PairingCoordinator) -> None:
-        self._pairing = pairing
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
 
     async def post(self, request: Request) -> Response:
         """Redeem one-time pairing code."""
+        from .const import DATA_PAIRING_COORDINATOR, DOMAIN
+
+        pairing = self._hass.data.get(DOMAIN, {}).get(DATA_PAIRING_COORDINATOR)
+        if pairing is None:
+            return self.json_message("Integration not loaded", status_code=503)
+
         try:
             payload = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -1100,7 +1113,7 @@ class PairingRedeemView(HomeAssistantView):
         )
 
         try:
-            token_payload = self._pairing.async_redeem_pairing_code(
+            token_payload = pairing.async_redeem_pairing_code(
                 pairing_code,
                 remote_ip=request.remote,
                 device_name=device_name,

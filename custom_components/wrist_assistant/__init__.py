@@ -112,12 +112,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
     hass.data[DOMAIN][DATA_CAMERA_STREAM_COORDINATOR] = camera_stream_coordinator
     hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE] = notification_store
-    hass.http.register_view(WatchUpdatesView(coordinator, notification_store=notification_store))
-    hass.http.register_view(PairingRedeemView(pairing_coordinator))
-    hass.http.register_view(CameraStreamView(hass, camera_stream_coordinator))
-    hass.http.register_view(CameraViewportView(camera_stream_coordinator))
+    hass.http.register_view(WatchUpdatesView(hass))
+    hass.http.register_view(PairingRedeemView(hass))
+    hass.http.register_view(CameraStreamView(hass))
+    hass.http.register_view(CameraViewportView(hass))
     hass.http.register_view(CameraBatchView(hass))
-    hass.http.register_view(NotificationRegisterView(notification_store))
+    hass.http.register_view(NotificationRegisterView(hass))
 
     # APNs client – read key in executor to avoid blocking the event loop.
     apns_client = await _create_apns_client(hass)

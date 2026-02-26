@@ -157,12 +157,17 @@ class CameraStreamView(HomeAssistantView):
     name = "api:wrist_assistant_camera_stream"
     requires_auth = True
 
-    def __init__(self, hass: HomeAssistant, coordinator: CameraStreamCoordinator) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
-        self._coordinator = coordinator
 
     async def get(self, request: Request, entity_id: str) -> StreamResponse:
         """Handle MJPEG stream request."""
+        from .const import DATA_CAMERA_STREAM_COORDINATOR, DOMAIN
+
+        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_CAMERA_STREAM_COORDINATOR)
+        if coordinator is None:
+            return Response(text="Integration not loaded", status=503)
+
         # Validate entity
         state = self._hass.states.get(entity_id)
         if state is None or not entity_id.startswith("camera."):
@@ -183,7 +188,7 @@ class CameraStreamView(HomeAssistantView):
             viewport.w = _clamp(float(query.get("w", 1)), 0.01, 1)
             viewport.h = _clamp(float(query.get("h", 1)), 0.01, 1)
 
-        session = self._coordinator.get_or_create_session(
+        session = coordinator.get_or_create_session(
             watch_id, entity_id, width, quality, fps, viewport
         )
 
@@ -244,7 +249,7 @@ class CameraStreamView(HomeAssistantView):
         except asyncio.CancelledError:
             pass
         finally:
-            self._coordinator.remove_session(watch_id, entity_id)
+            coordinator.remove_session(watch_id, entity_id)
             _LOGGER.debug("Smart stream ended for %s (watch: %s)", entity_id, watch_id)
 
         return response
@@ -257,11 +262,17 @@ class CameraViewportView(HomeAssistantView):
     name = "api:wrist_assistant_camera_viewport"
     requires_auth = True
 
-    def __init__(self, coordinator: CameraStreamCoordinator) -> None:
-        self._coordinator = coordinator
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
 
     async def post(self, request: Request) -> Response:
         """Update stream params (viewport and/or width) for an active session."""
+        from .const import DATA_CAMERA_STREAM_COORDINATOR, DOMAIN
+
+        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_CAMERA_STREAM_COORDINATOR)
+        if coordinator is None:
+            return self.json_message("Integration not loaded", status_code=503)
+
         try:
             payload = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -290,7 +301,7 @@ class CameraViewportView(HomeAssistantView):
         if "width" in payload:
             width = int(float(payload["width"]))
 
-        if self._coordinator.update_session(watch_id, entity_id, viewport=viewport, width=width):
+        if coordinator.update_session(watch_id, entity_id, viewport=viewport, width=width):
             return self.json({"status": "ok"})
         return self.json_message("No active stream for this session", status_code=404)
 

@@ -117,11 +117,17 @@ class NotificationRegisterView(HomeAssistantView):
     name = "api:wrist_assistant_notification_register"
     requires_auth = True
 
-    def __init__(self, store: NotificationTokenStore) -> None:
-        self._store = store
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
 
     async def post(self, request: Request) -> Response:
         """Register a device token."""
+        from .const import DATA_NOTIFICATION_TOKEN_STORE, DOMAIN
+
+        store = self._hass.data.get(DOMAIN, {}).get(DATA_NOTIFICATION_TOKEN_STORE)
+        if store is None:
+            return self.json_message("Integration not loaded", status_code=503)
+
         try:
             payload = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -140,7 +146,7 @@ class NotificationRegisterView(HomeAssistantView):
         if not isinstance(device_token, str) or not device_token:
             return self.json_message("device_token is required", status_code=400)
 
-        self._store.register(
+        store.register(
             watch_id, device_token, platform=platform, environment=environment
         )
         return self.json({"status": "ok"})
