@@ -36,6 +36,7 @@ class APNsClient:
             raise FileNotFoundError(f"Bundled APNs key not found at {_BUNDLED_KEY_PATH}")
         if not APNS_KEY_ID or not APNS_TEAM_ID:
             raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
+        self._key_content: str = _BUNDLED_KEY_PATH.read_text()
         self._production: APNs | None = None
         self._sandbox: APNs | None = None
 
@@ -44,7 +45,7 @@ class APNsClient:
         if environment == "development":
             if self._sandbox is None:
                 self._sandbox = APNs(
-                    key=str(_BUNDLED_KEY_PATH),
+                    key=self._key_content,
                     key_id=APNS_KEY_ID,
                     team_id=APNS_TEAM_ID,
                     topic=APNS_TOPIC,
@@ -53,7 +54,7 @@ class APNsClient:
             return self._sandbox
         if self._production is None:
             self._production = APNs(
-                key=str(_BUNDLED_KEY_PATH),
+                key=self._key_content,
                 key_id=APNS_KEY_ID,
                 team_id=APNS_TEAM_ID,
                 topic=APNS_TOPIC,
