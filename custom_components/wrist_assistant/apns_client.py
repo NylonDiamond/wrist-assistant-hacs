@@ -27,37 +27,37 @@ class APNsClient:
     Maintains both a production and sandbox client internally so pushes
     are routed to the correct APNs gateway based on each token's environment.
 
-    Use the ``create()`` classmethod to build an instance — it performs all
-    blocking I/O (file reads, SSL context creation) so the caller can run it
-    in an executor.
+    APNs instances are created lazily because their constructor requires
+    an active asyncio event loop.
     """
 
-    def __init__(self, production: APNs, sandbox: APNs) -> None:
-        self._production = production
-        self._sandbox = sandbox
-
-    @classmethod
-    def create(cls) -> APNsClient:
-        """Build an APNsClient (blocking — call from an executor)."""
-        if not _BUNDLED_KEY_PATH.is_file():
-            raise FileNotFoundError(f"Bundled APNs key not found at {_BUNDLED_KEY_PATH}")
+    def __init__(self, key_content: str) -> None:
         if not APNS_KEY_ID or not APNS_TEAM_ID:
             raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
-        key = _BUNDLED_KEY_PATH.read_text()
-        production = APNs(
-            key=key, key_id=APNS_KEY_ID, team_id=APNS_TEAM_ID,
-            topic=APNS_TOPIC, use_sandbox=False,
-        )
-        sandbox = APNs(
-            key=key, key_id=APNS_KEY_ID, team_id=APNS_TEAM_ID,
-            topic=APNS_TOPIC, use_sandbox=True,
-        )
-        return cls(production, sandbox)
+        self._key_content = key_content
+        self._production: APNs | None = None
+        self._sandbox: APNs | None = None
 
     def _get_client(self, environment: str) -> APNs:
-        """Return the APNs client for the given environment."""
+        """Return the APNs client for the given environment, creating lazily."""
         if environment == "development":
+            if self._sandbox is None:
+                self._sandbox = APNs(
+                    key=self._key_content,
+                    key_id=APNS_KEY_ID,
+                    team_id=APNS_TEAM_ID,
+                    topic=APNS_TOPIC,
+                    use_sandbox=True,
+                )
             return self._sandbox
+        if self._production is None:
+            self._production = APNs(
+                key=self._key_content,
+                key_id=APNS_KEY_ID,
+                team_id=APNS_TEAM_ID,
+                topic=APNS_TOPIC,
+                use_sandbox=False,
+            )
         return self._production
 
     async def send_push(
