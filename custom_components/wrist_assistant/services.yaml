@@ -39,3 +39,68 @@ create_pairing_code:
           min: 1
           max: 36500
           mode: box
+
+send_notification:
+  name: Send notification
+  description: >-
+    Send a push notification to one or all paired Apple Watches via APNs.
+    Requires APNs credentials to be configured in integration options.
+  fields:
+    message:
+      name: Message
+      description: Notification body text.
+      required: true
+      example: "Front door was opened"
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional notification title.
+      example: "Door Alert"
+      selector:
+        text:
+    target:
+      name: Target
+      description: >-
+        Watch ID to send to. Omit to send to all registered watches.
+      example: "my-watch-id"
+      selector:
+        text:
+    category:
+      name: Category
+      description: >-
+        Notification category for actionable notifications.
+      selector:
+        select:
+          options:
+            - "ENTITY_TOGGLE"
+            - "LOCK_CONTROL"
+            - "ALARM_CONTROL"
+            - "CONFIRM_ACTION"
+            - "SCENE_ACTIVATE"
+            - "HA_CUSTOM"
+    data:
+      name: Data
+      description: >-
+        Additional data payload. Keys like entity_id, domain, service,
+        service_data, alarm_code, actions, tag, and group are passed
+        to the watch app.
+      selector:
+        object:
+    sound:
+      name: Sound
+      description: >-
+        Sound to play. Use "default" for the default sound, or omit for silent.
+      example: "default"
+      selector:
+        text:
+    push_type:
+      name: Push type
+      description: >-
+        APNs push type. "alert" (default) for visible notifications,
+        "background" for silent background updates.
+      selector:
+        select:
+          options:
+            - "alert"
+            - "background"

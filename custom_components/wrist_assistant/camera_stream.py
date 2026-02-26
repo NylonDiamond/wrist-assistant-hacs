@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass, field
+import gzip
 from io import BytesIO
+import json as _json
 import logging
 from aiohttp.web import Request, Response, StreamResponse
 from PIL import Image
@@ -290,3 +293,76 @@ class CameraViewportView(HomeAssistantView):
         if self._coordinator.update_session(watch_id, entity_id, viewport=viewport, width=width):
             return self.json({"status": "ok"})
         return self.json_message("No active stream for this session", status_code=404)
+
+
+MAX_BATCH_CAMERAS = 8
+
+
+class CameraBatchView(HomeAssistantView):
+    """POST endpoint that fetches multiple camera snapshots in parallel."""
+
+    url = "/api/wrist_assistant/camera/batch"
+    name = "api:wrist_assistant_camera_batch"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def post(self, request: Request) -> Response:
+        """Handle batch camera snapshot request."""
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return self.json_message("Invalid JSON body", status_code=400)
+
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object", status_code=400)
+
+        cameras = payload.get("cameras")
+        if not isinstance(cameras, list) or not cameras:
+            return self.json_message("cameras array is required", status_code=400)
+
+        cameras = cameras[:MAX_BATCH_CAMERAS]
+
+        async def _fetch_one(spec: dict) -> dict | None:
+            entity_id = spec.get("entity_id")
+            if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+                return None
+            width = int(_clamp(float(spec.get("width", DEFAULT_WIDTH)), MIN_WIDTH, MAX_WIDTH))
+            quality = int(_clamp(float(spec.get("quality", DEFAULT_QUALITY)), MIN_QUALITY, MAX_QUALITY))
+
+            try:
+                image: CameraImage = await async_get_image(self._hass, entity_id, timeout=5)
+                if image is None or image.content is None:
+                    return {"entity_id": entity_id, "data": None, "size": 0}
+
+                processed = await self._hass.async_add_executor_job(
+                    _process_frame,
+                    image.content,
+                    ViewportState(),  # Full frame
+                    width,
+                    quality,
+                )
+                b64 = base64.b64encode(processed).decode("ascii")
+                return {"entity_id": entity_id, "data": b64, "size": len(processed)}
+            except (HomeAssistantError, Exception):  # noqa: BLE001
+                _LOGGER.debug("Batch snapshot failed for %s", entity_id)
+                return {"entity_id": entity_id, "data": None, "size": 0}
+
+        results = await asyncio.gather(*[_fetch_one(spec) for spec in cameras])
+        snapshots = [r for r in results if r is not None]
+
+        body = {"snapshots": snapshots}
+        json_bytes = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_encoding:
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            return Response(
+                body=compressed,
+                status=200,
+                content_type="application/json",
+                headers={"Content-Encoding": "gzip"},
+            )
+
+        return Response(body=json_bytes, status=200, content_type="application/json")

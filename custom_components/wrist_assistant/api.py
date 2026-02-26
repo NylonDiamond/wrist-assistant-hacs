@@ -6,6 +6,8 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import gzip
+import json as _json
 import logging
 import secrets
 from typing import Any
@@ -70,6 +72,104 @@ class PairingSession:
     lifespan_days: int
 
 
+_SLIM_ATTRIBUTES: dict[str, set[str]] = {
+    "light": {
+        "friendly_name", "brightness", "color_temp", "color_temp_kelvin",
+        "rgb_color", "hs_color", "xy_color", "color_mode", "supported_color_modes",
+        "min_mireds", "max_mireds", "min_color_temp_kelvin", "max_color_temp_kelvin",
+        "effect", "effect_list", "icon", "entity_picture",
+    },
+    "switch": {
+        "friendly_name", "device_class", "icon", "entity_picture",
+    },
+    "cover": {
+        "friendly_name", "device_class", "current_position", "current_tilt_position",
+        "icon", "entity_picture",
+    },
+    "climate": {
+        "friendly_name", "hvac_modes", "hvac_action", "current_temperature",
+        "temperature", "target_temp_high", "target_temp_low", "fan_mode", "fan_modes",
+        "preset_mode", "preset_modes", "humidity", "current_humidity",
+        "min_temp", "max_temp", "icon", "entity_picture",
+    },
+    "fan": {
+        "friendly_name", "percentage", "preset_mode", "preset_modes",
+        "oscillating", "direction", "percentage_step", "icon", "entity_picture",
+    },
+    "lock": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "media_player": {
+        "friendly_name", "media_title", "media_artist", "media_album_name",
+        "media_content_type", "media_duration", "media_position",
+        "volume_level", "is_volume_muted", "source", "source_list",
+        "sound_mode", "sound_mode_list", "entity_picture",
+        "icon", "device_class",
+    },
+    "camera": {
+        "friendly_name", "entity_picture", "frontend_stream_type", "icon",
+    },
+    "binary_sensor": {
+        "friendly_name", "device_class", "icon", "entity_picture",
+    },
+    "sensor": {
+        "friendly_name", "device_class", "unit_of_measurement", "state_class",
+        "icon", "entity_picture",
+    },
+    "person": {
+        "friendly_name", "entity_picture", "gps_accuracy", "latitude", "longitude",
+        "source", "icon",
+    },
+    "alarm_control_panel": {
+        "friendly_name", "code_arm_required", "supported_features", "icon",
+        "entity_picture",
+    },
+    "vacuum": {
+        "friendly_name", "battery_level", "fan_speed", "fan_speed_list",
+        "status", "icon", "entity_picture",
+    },
+    "input_boolean": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "input_number": {
+        "friendly_name", "min", "max", "step", "mode",
+        "unit_of_measurement", "icon", "entity_picture",
+    },
+    "number": {
+        "friendly_name", "min", "max", "step", "mode",
+        "unit_of_measurement", "icon", "entity_picture",
+    },
+    "input_select": {
+        "friendly_name", "options", "icon", "entity_picture",
+    },
+    "select": {
+        "friendly_name", "options", "icon", "entity_picture",
+    },
+    "scene": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "script": {
+        "friendly_name", "icon", "entity_picture",
+    },
+    "automation": {
+        "friendly_name", "last_triggered", "icon", "entity_picture",
+    },
+    "timer": {
+        "friendly_name", "duration", "remaining", "finishes_at", "icon",
+    },
+    "remote": {
+        "friendly_name", "activity_list", "current_activity", "icon",
+        "entity_picture",
+    },
+    "button": {
+        "friendly_name", "device_class", "icon", "entity_picture",
+    },
+    "input_button": {
+        "friendly_name", "icon", "entity_picture",
+    },
+}
+
+
 class DeltaCoordinator:
     """Tracks state changes and serves filtered long-poll responses."""
 
@@ -82,9 +182,14 @@ class DeltaCoordinator:
         self._generation_event: asyncio.Event = asyncio.Event()
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
+        self._capabilities: set[str] = {"smart_camera_stream"}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
+
+    def register_capability(self, cap: str) -> None:
+        """Register a server capability advertised to clients."""
+        self._capabilities.add(cap)
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
@@ -139,6 +244,7 @@ class DeltaCoordinator:
         force_delta: bool = False,
         battery_threshold: int = 20,
         summary_entities: dict[str, list[str]] | None = None,
+        slim: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -178,7 +284,7 @@ class DeltaCoordinator:
         # When since is nil, the client is requesting a full state snapshot.
         # Fetch current state directly from HA's state machine (in-memory, instant).
         if since is None or since == "":
-            snapshot_events = self._snapshot_current_state(session.entities)
+            snapshot_events = self._snapshot_current_state(session.entities, slim=slim)
             return 200, self._response_payload(
                 events=snapshot_events,
                 next_cursor=str(self._cursor),
@@ -215,6 +321,7 @@ class DeltaCoordinator:
             since_cursor=since_cursor,
             entities=session.entities,
             limit=MAX_EVENTS_PER_RESPONSE,
+            slim=slim,
         )
         if events:
             return 200, self._response_payload(
@@ -253,6 +360,7 @@ class DeltaCoordinator:
                         since_cursor=since_cursor,
                         entities=session.entities,
                         limit=MAX_EVENTS_PER_RESPONSE,
+                        slim=slim,
                     )
                     if events:
                         return 200, self._response_payload(
@@ -278,6 +386,7 @@ class DeltaCoordinator:
                     since_cursor=since_cursor,
                     entities=session.entities,
                     limit=MAX_EVENTS_PER_RESPONSE,
+                    slim=slim,
                 )
                 if events:
                     return 200, self._response_payload(
@@ -321,9 +430,10 @@ class DeltaCoordinator:
         self._generation_event.set()
 
     def _snapshot_current_state(
-        self, entities: set[str]
+        self, entities: set[str], *, slim: bool = False
     ) -> list[dict[str, Any]]:
         """Build a full state snapshot from HA's state machine for the given entities."""
+        to_payload = self._slim_state_to_payload if slim else self._state_to_payload
         snapshot: list[dict[str, Any]] = []
         for entity_id in entities:
             state = self.hass.states.get(entity_id)
@@ -333,7 +443,7 @@ class DeltaCoordinator:
                 {
                     "entity_id": state.entity_id,
                     "state": state.state,
-                    "new_state": self._state_to_payload(state),
+                    "new_state": to_payload(state),
                     "context_id": (
                         state.context.id if state.context is not None else None
                     ),
@@ -343,7 +453,7 @@ class DeltaCoordinator:
         return snapshot
 
     def _collect_events(
-        self, since_cursor: int, entities: set[str], limit: int
+        self, since_cursor: int, entities: set[str], limit: int, *, slim: bool = False
     ) -> tuple[list[dict[str, Any]], int]:
         """Collect filtered events after the provided cursor."""
         matched: list[dict[str, Any]] = []
@@ -354,7 +464,10 @@ class DeltaCoordinator:
             if event.entity_id not in entities:
                 continue
 
-            matched.append(event.payload)
+            payload = event.payload
+            if slim:
+                payload = self._slim_event_payload(payload)
+            matched.append(payload)
             last_sent_cursor = event.cursor
             if len(matched) >= limit:
                 break
@@ -427,7 +540,7 @@ class DeltaCoordinator:
             "next_cursor": next_cursor,
             "need_entities": need_entities,
             "resync_required": resync_required,
-            "capabilities": ["smart_camera_stream"],
+            "capabilities": sorted(self._capabilities),
         }
         payload["info_summary"] = self._compute_info_summary(
             include_details=include_details,
@@ -577,6 +690,40 @@ class DeltaCoordinator:
             "state": state.state,
             "attributes": self._json_safe(state.attributes),
             "last_updated": state.last_updated.isoformat(),
+        }
+
+    def _slim_state_to_payload(self, state: State) -> dict[str, Any]:
+        """Return a state payload with attributes filtered to domain whitelist."""
+        domain = state.entity_id.split(".", 1)[0] if "." in state.entity_id else ""
+        allowed = _SLIM_ATTRIBUTES.get(domain)
+        if allowed is not None:
+            attrs = {k: v for k, v in state.attributes.items() if k in allowed}
+        else:
+            attrs = dict(state.attributes)
+        return {
+            "entity_id": state.entity_id,
+            "state": state.state,
+            "attributes": self._json_safe(attrs),
+            "last_updated": state.last_updated.isoformat(),
+        }
+
+    def _slim_event_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Post-filter an event payload's new_state attributes for slim mode."""
+        new_state = payload.get("new_state")
+        if not isinstance(new_state, dict):
+            return payload
+        attrs = new_state.get("attributes")
+        if not isinstance(attrs, dict):
+            return payload
+        entity_id = new_state.get("entity_id", payload.get("entity_id", ""))
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+        allowed = _SLIM_ATTRIBUTES.get(domain)
+        if allowed is None:
+            return payload
+        trimmed = {k: v for k, v in attrs.items() if k in allowed}
+        return {
+            **payload,
+            "new_state": {**new_state, "attributes": trimmed},
         }
 
     def _json_safe(self, value: Any) -> Any:
@@ -812,8 +959,9 @@ class WatchUpdatesView(HomeAssistantView):
     name = "api:wrist_assistant_updates"
     requires_auth = True
 
-    def __init__(self, coordinator: DeltaCoordinator) -> None:
+    def __init__(self, coordinator: DeltaCoordinator, notification_store: "NotificationTokenStore | None" = None) -> None:
         self._coordinator = coordinator
+        self._notification_store = notification_store
 
     async def post(self, request: Request) -> Response:
         """Handle delta update poll request."""
@@ -852,6 +1000,7 @@ class WatchUpdatesView(HomeAssistantView):
         timeout = max(MIN_TIMEOUT_SECONDS, min(timeout, MAX_TIMEOUT_SECONDS))
 
         force_delta = payload.get("force_delta", False) is True
+        slim = payload.get("slim", False) is True
         raw_threshold = payload.get("battery_threshold", 20)
         battery_threshold = max(5, min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20))
 
@@ -865,6 +1014,20 @@ class WatchUpdatesView(HomeAssistantView):
                 if isinstance(domain, str) and isinstance(ids, list):
                     summary_entities[domain] = [eid for eid in ids if isinstance(eid, str) and eid]
 
+        # Piggyback device token registration on authenticated poll
+        device_token = payload.get("device_token")
+        if (
+            self._notification_store is not None
+            and isinstance(device_token, str)
+            and device_token
+        ):
+            apns_env = payload.get("apns_environment", "production")
+            if apns_env not in ("development", "production"):
+                apns_env = "production"
+            self._notification_store.register(
+                watch_id, device_token, platform="watchos", environment=apns_env
+            )
+
         status, body = await self._coordinator.handle_poll(
             watch_id=watch_id,
             since=since,
@@ -874,13 +1037,32 @@ class WatchUpdatesView(HomeAssistantView):
             force_delta=force_delta,
             battery_threshold=battery_threshold,
             summary_entities=summary_entities,
+            slim=slim,
         )
 
         if status == 204:
             return Response(status=204)
         if body is None:
             return Response(status=status)
-        return self.json(body, status_code=status)
+
+        json_bytes = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+
+        # Gzip compress if the client supports it
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_encoding:
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            return Response(
+                body=compressed,
+                status=status,
+                content_type="application/json",
+                headers={"Content-Encoding": "gzip"},
+            )
+
+        return Response(
+            body=json_bytes,
+            status=status,
+            content_type="application/json",
+        )
 
 
 class PairingRedeemView(HomeAssistantView):

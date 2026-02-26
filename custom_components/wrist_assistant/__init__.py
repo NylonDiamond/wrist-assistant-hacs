@@ -29,19 +29,28 @@ from .api import (
     PairingRedeemView,
     WatchUpdatesView,
 )
+from .apns_client import APNsClient
 from .camera_stream import (
+    CameraBatchView,
     CameraStreamCoordinator,
     CameraStreamView,
     CameraViewportView,
 )
 from .const import (
+    DATA_APNS_CLIENT,
     DATA_CAMERA_STREAM_COORDINATOR,
     DATA_COORDINATOR,
+    DATA_NOTIFICATION_TOKEN_STORE,
     DATA_PAIRING_COORDINATOR,
     DOMAIN,
     PLATFORMS,
     SERVICE_CREATE_PAIRING_CODE,
     SERVICE_FORCE_RESYNC,
+    SERVICE_SEND_NOTIFICATION,
+)
+from .notifications import (
+    NotificationRegisterView,
+    NotificationTokenStore,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +77,17 @@ _CREATE_PAIRING_SCHEMA = vol.Schema(
         ),
     }
 )
+_SEND_NOTIFICATION_SCHEMA = vol.Schema(
+    {
+        vol.Required("message"): cv.string,
+        vol.Optional("title"): cv.string,
+        vol.Optional("target"): cv.string,
+        vol.Optional("category"): cv.string,
+        vol.Optional("data"): dict,
+        vol.Optional("sound"): cv.string,
+        vol.Optional("push_type", default="alert"): vol.In(["alert", "background"]),
+    }
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -78,14 +98,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = DeltaCoordinator(hass)
     pairing_coordinator = PairingCoordinator(hass)
     camera_stream_coordinator = CameraStreamCoordinator()
+    notification_store = NotificationTokenStore(hass)
+    await notification_store.async_load()
+
+    # Register server capabilities
+    coordinator.register_capability("gzip")
+    coordinator.register_capability("slim_payloads")
+    coordinator.register_capability("camera_batch")
+    coordinator.register_capability("push_notifications")
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][DATA_COORDINATOR] = coordinator
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
     hass.data[DOMAIN][DATA_CAMERA_STREAM_COORDINATOR] = camera_stream_coordinator
-    hass.http.register_view(WatchUpdatesView(coordinator))
+    hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE] = notification_store
+    hass.http.register_view(WatchUpdatesView(coordinator, notification_store=notification_store))
     hass.http.register_view(PairingRedeemView(pairing_coordinator))
     hass.http.register_view(CameraStreamView(hass, camera_stream_coordinator))
     hass.http.register_view(CameraViewportView(camera_stream_coordinator))
+    hass.http.register_view(CameraBatchView(hass))
+    hass.http.register_view(NotificationRegisterView(notification_store))
+
+    # Create APNs client (bundled key, handles both sandbox + production)
+    apns_client = _create_apns_client()
+    if apns_client:
+        hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
+        _LOGGER.info("APNs client ready")
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
@@ -153,6 +191,72 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
+    async def _handle_send_notification(call: ServiceCall) -> None:
+        client = hass.data[DOMAIN].get(DATA_APNS_CLIENT)
+        if client is None:
+            raise HomeAssistantError(
+                "APNs client failed to initialize. Check Home Assistant logs for details."
+            )
+
+        store = hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE]
+        target = call.data.get("target")
+        message = call.data["message"]
+        title = call.data.get("title")
+        category = call.data.get("category")
+        extra_data = call.data.get("data")
+        sound = call.data.get("sound")
+        push_type = call.data.get("push_type", "alert")
+
+        # Resolve targets (need full entries for environment)
+        if target:
+            entry = store.get_entry(target)
+            if entry is None:
+                raise HomeAssistantError(f"No registered push token for watch '{target}'")
+            targets = {target: entry}
+        else:
+            all_tokens = store.all_tokens
+            if not all_tokens:
+                raise HomeAssistantError("No watches have registered for push notifications")
+            targets = all_tokens
+
+        # Send to each target
+        failures = []
+        for watch_id, token_entry in targets.items():
+            success, reason = await client.send_push(
+                device_token=token_entry.device_token,
+                title=title,
+                body=message,
+                category=category,
+                data=extra_data,
+                sound=sound,
+                push_type=push_type,
+                environment=token_entry.environment,
+            )
+            if not success:
+                if APNsClient.is_dead_token(reason):
+                    _LOGGER.warning(
+                        "Removing dead token for watch_id=%s (reason=%s)",
+                        watch_id,
+                        reason,
+                    )
+                    store.remove(watch_id)
+                failures.append((watch_id, reason))
+
+        if failures and len(failures) == len(targets):
+            reasons = ", ".join(f"{wid}: {r}" for wid, r in failures)
+            raise HomeAssistantError(f"All push notifications failed: {reasons}")
+
+        if failures:
+            reasons = ", ".join(f"{wid}: {r}" for wid, r in failures)
+            _LOGGER.warning("Some push notifications failed: %s", reasons)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEND_NOTIFICATION,
+        _handle_send_notification,
+        schema=_SEND_NOTIFICATION_SCHEMA,
+    )
+
     return True
 
 
@@ -170,11 +274,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if data and DATA_CAMERA_STREAM_COORDINATOR in data:
             data[DATA_CAMERA_STREAM_COORDINATOR].shutdown()
             data.pop(DATA_CAMERA_STREAM_COORDINATOR, None)
+        data.pop(DATA_NOTIFICATION_TOKEN_STORE, None)
+        data.pop(DATA_APNS_CLIENT, None)
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
         )
         hass.services.async_remove(DOMAIN, SERVICE_CREATE_PAIRING_CODE)
         hass.services.async_remove(DOMAIN, SERVICE_FORCE_RESYNC)
+        hass.services.async_remove(DOMAIN, SERVICE_SEND_NOTIFICATION)
     return unload_ok
 
 
@@ -183,6 +290,15 @@ async def async_remove_config_entry_device(
 ) -> bool:
     """Allow removal of a device from the UI."""
     return True
+
+
+def _create_apns_client() -> APNsClient | None:
+    """Create APNs client with bundled key (handles both sandbox + production)."""
+    try:
+        return APNsClient()
+    except Exception:
+        _LOGGER.exception("Failed to create APNs client")
+        return None
 
 
 def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
