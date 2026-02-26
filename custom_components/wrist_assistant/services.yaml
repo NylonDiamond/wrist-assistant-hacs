@@ -81,6 +81,7 @@ send_notification:
             - "LOCK_CONTROL"
             - "UNLOCK_CONTROL"
             - "ALARM_CONTROL"
+            - "VACUUM_CONTROL"
             - "CONFIRM_ACTION"
             - "SCENE_ACTIVATE"
             - "HA_CUSTOM"
