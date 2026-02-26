@@ -43,6 +43,81 @@ Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch 
 - Real-time two-way sync for fast state and control updates
 - Smooth multi-watch support for shared homes
 
+## Services
+
+### `wrist_assistant.send_notification`
+
+Send push notifications directly to paired Apple Watches via APNs. Watches register their push tokens automatically during pairing — no extra setup needed.
+
+**Basic notification:**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  title: "Door Alert"
+  message: "Front door was opened"
+  sound: "default"
+```
+
+**Target a specific watch:**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  message: "Garage door left open"
+  target: "my-watch-id"
+```
+
+**Actionable notification (entity toggle):**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  title: "Living Room"
+  message: "Lights are still on"
+  category: "ENTITY_TOGGLE"
+  data:
+    entity_id: "light.living_room"
+```
+
+**Silent background update:**
+
+```yaml
+service: wrist_assistant.send_notification
+data:
+  message: "sync"
+  push_type: "background"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `message` | Yes | Notification body text |
+| `title` | No | Notification title |
+| `target` | No | Watch ID — omit to send to all watches |
+| `category` | No | `ENTITY_TOGGLE`, `LOCK_CONTROL`, `ALARM_CONTROL`, `CONFIRM_ACTION`, `SCENE_ACTIVATE`, or `HA_CUSTOM` |
+| `data` | No | Extra payload (e.g. `entity_id`, `domain`, `service`, `actions`) |
+| `sound` | No | `"default"` for system sound, omit for silent |
+| `push_type` | No | `"alert"` (default) or `"background"` for silent updates |
+
+### `wrist_assistant.create_pairing_code`
+
+Generate a one-time pairing code for the Wrist Assistant app. Returns a `pairing_uri` and `pairing_code`.
+
+```yaml
+service: wrist_assistant.create_pairing_code
+data:
+  local_url: "http://homeassistant.local:8123"
+  remote_url: "https://ha.example.com"
+```
+
+### `wrist_assistant.force_resync`
+
+Force all connected watches to perform a full state refresh on their next poll.
+
+```yaml
+service: wrist_assistant.force_resync
+```
+
 ## Screenshots and GIFs
 
 Visual setup guide coming soon (integration card, pairing flow, and watch sync in action).

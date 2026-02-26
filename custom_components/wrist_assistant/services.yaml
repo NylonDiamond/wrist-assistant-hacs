@@ -44,7 +44,7 @@ send_notification:
   name: Send notification
   description: >-
     Send a push notification to one or all paired Apple Watches via APNs.
-    Requires APNs credentials to be configured in integration options.
+    Watches register their push tokens automatically during pairing.
   fields:
     message:
       name: Message
