@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -145,6 +146,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    await _install_bundled_blueprints(hass)
 
     if not entry.data.get("initial_setup_done"):
         _show_pairing_notification(hass, entry, pairing_coordinator)
@@ -444,6 +447,36 @@ async def _cleanup_orphaned_pairing_tokens(
             "Revoked %d orphaned Wrist Assistant pairing token(s) from previous runs",
             revoked,
         )
+
+
+async def _install_bundled_blueprints(hass: HomeAssistant) -> None:
+    """Copy bundled blueprint files into the HA blueprints directory.
+
+    Runs the file copy in the executor to avoid blocking the event loop.
+    Overwrites existing files so updates ship with new integration versions.
+    """
+    src_dir = Path(__file__).parent / "blueprints" / "script"
+    dest_dir = Path(hass.config.path("blueprints")) / "script" / DOMAIN
+
+    if not src_dir.is_dir():
+        return
+
+    def _copy() -> list[str]:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        installed: list[str] = []
+        for src_file in src_dir.iterdir():
+            if src_file.suffix in (".yaml", ".yml") and src_file.is_file():
+                dest_file = dest_dir / src_file.name
+                dest_file.write_text(src_file.read_text())
+                installed.append(src_file.name)
+        return installed
+
+    try:
+        installed = await hass.async_add_executor_job(_copy)
+        if installed:
+            _LOGGER.debug("Installed bundled blueprints: %s", installed)
+    except Exception:
+        _LOGGER.warning("Failed to install bundled blueprints", exc_info=True)
 
 
 def _show_pairing_notification(

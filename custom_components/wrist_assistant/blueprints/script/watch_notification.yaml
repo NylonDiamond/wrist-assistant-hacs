@@ -1,0 +1,171 @@
+blueprint:
+  name: "Wrist Assistant Watch Notification"
+  description: >
+    Create a reusable watch notification script. Call the resulting script
+    from any automation to send a push notification to your Apple Watch
+    via Wrist Assistant.
+
+    **Usage:** Settings → Automations & Scenes → Scripts → Add → Use Blueprint.
+    Fill in the message and any optional fields, save the script, then call it
+    as an action from any automation trigger.
+  domain: script
+  input:
+    message:
+      name: Message
+      description: Notification body text.
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional title displayed above the message.
+      default: ""
+      selector:
+        text:
+    category:
+      name: Category
+      description: Action buttons shown on the notification.
+      default: ""
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "None (info only)"
+              value: ""
+            - label: "Toggle Entity"
+              value: "ENTITY_TOGGLE"
+            - label: "Turn On Entity"
+              value: "ENTITY_TURN_ON"
+            - label: "Turn Off Entity"
+              value: "ENTITY_TURN_OFF"
+            - label: "Open (cover/valve)"
+              value: "OPEN_CONTROL"
+            - label: "Close (cover/valve)"
+              value: "CLOSE_CONTROL"
+            - label: "Lock"
+              value: "LOCK_CONTROL"
+            - label: "Unlock"
+              value: "UNLOCK_CONTROL"
+            - label: "Alarm Control"
+              value: "ALARM_CONTROL"
+            - label: "Vacuum Control (start, pause, return home)"
+              value: "VACUUM_CONTROL"
+            - label: "Confirm Action"
+              value: "CONFIRM_ACTION"
+            - label: "Activate Scene"
+              value: "SCENE_ACTIVATE"
+            - label: "Custom HA Actions"
+              value: "HA_CUSTOM"
+    priority:
+      name: Priority
+      description: >
+        Interruption level. Passive delivers silently, Active is the default,
+        Time Sensitive breaks through Focus/DND, Critical overrides mute.
+      default: "active"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Passive (silent delivery)"
+              value: "passive"
+            - label: "Active (default)"
+              value: "active"
+            - label: "Time Sensitive (breaks Focus)"
+              value: "time-sensitive"
+            - label: "Critical (overrides mute)"
+              value: "critical"
+    sound:
+      name: Sound
+      description: Notification sound.
+      default: "default"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Default sound"
+              value: "default"
+            - label: "Silent"
+              value: ""
+    target:
+      name: Target Watch
+      description: >
+        Watch ID to send to. Leave empty to send to all registered watches.
+      default: ""
+      selector:
+        text:
+    tag:
+      name: Tag
+      description: >
+        Collapse key. A new notification with the same tag replaces the
+        previous one instead of stacking.
+      default: ""
+      selector:
+        text:
+    group:
+      name: Group
+      description: >
+        Thread ID to group related notifications together in the watch
+        notification center.
+      default: ""
+      selector:
+        text:
+    action_entity:
+      name: Action Entity
+      description: >
+        Entity for action buttons to act on. Required for categories like
+        Toggle, Turn On/Off, Open/Close, Lock/Unlock, and Scene Activate.
+      default: ""
+      selector:
+        entity:
+    action_domain:
+      name: Action Domain
+      description: >
+        Service domain for the Confirm Action category (e.g. light, switch).
+      default: ""
+      selector:
+        text:
+    action_service:
+      name: Action Service
+      description: >
+        Service name for the Confirm Action category (e.g. turn_on, toggle).
+      default: ""
+      selector:
+        text:
+
+mode: parallel
+max: 10
+
+sequence:
+  - variables:
+      bp_message: !input message
+      bp_title: !input title
+      bp_category: !input category
+      bp_priority: !input priority
+      bp_sound: !input sound
+      bp_target: !input target
+      bp_tag: !input tag
+      bp_group: !input group
+      bp_action_entity: !input action_entity
+      bp_action_domain: !input action_domain
+      bp_action_service: !input action_service
+  - service: wrist_assistant.send_notification
+    data:
+      message: "{{ bp_message }}"
+      title: "{{ bp_title if bp_title else none }}"
+      category: "{{ bp_category if bp_category else none }}"
+      sound: "{{ bp_sound if bp_sound else none }}"
+      target: "{{ bp_target if bp_target else none }}"
+      priority: "{{ bp_priority }}"
+      tag: "{{ bp_tag if bp_tag else none }}"
+      group: "{{ bp_group if bp_group else none }}"
+      data: >-
+        {%- set ns = namespace(items=[]) -%}
+        {%- if bp_action_entity -%}
+          {%- set ns.items = ns.items + [("entity_id", bp_action_entity)] -%}
+        {%- endif -%}
+        {%- if bp_action_domain -%}
+          {%- set ns.items = ns.items + [("domain", bp_action_domain)] -%}
+        {%- endif -%}
+        {%- if bp_action_service -%}
+          {%- set ns.items = ns.items + [("service", bp_action_service)] -%}
+        {%- endif -%}
+        {{ dict(ns.items) if ns.items else none }}
