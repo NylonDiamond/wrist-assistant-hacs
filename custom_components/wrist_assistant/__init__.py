@@ -294,11 +294,18 @@ async def async_remove_config_entry_device(
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
     """Create APNs client, reading the bundled key off the event loop."""
+    import ssl
+
     from .apns_client import _BUNDLED_KEY_PATH  # noqa: WPS433
 
+    def _blocking_init() -> tuple[str, ssl.SSLContext]:
+        key_content = _BUNDLED_KEY_PATH.read_text()
+        ctx = ssl.create_default_context()
+        return key_content, ctx
+
     try:
-        key_content = await hass.async_add_executor_job(_BUNDLED_KEY_PATH.read_text)
-        return APNsClient(key_content)
+        key_content, ssl_context = await hass.async_add_executor_job(_blocking_init)
+        return APNsClient(key_content, ssl_context=ssl_context)
     except Exception:
         _LOGGER.exception("Failed to create APNs client")
         return None

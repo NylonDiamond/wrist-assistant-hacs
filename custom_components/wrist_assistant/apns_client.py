@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from pathlib import Path
 
 from aioapns import APNs, NotificationRequest, PushType
@@ -31,15 +32,17 @@ class APNsClient:
     an active asyncio event loop.
     """
 
-    def __init__(self, key_content: str) -> None:
+    def __init__(self, key_content: str, ssl_context: ssl.SSLContext | None = None) -> None:
         if not APNS_KEY_ID or not APNS_TEAM_ID:
             raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
         self._key_content = key_content
+        self._ssl_context = ssl_context
         self._production: APNs | None = None
         self._sandbox: APNs | None = None
 
     def _get_client(self, environment: str) -> APNs:
         """Return the APNs client for the given environment, creating lazily."""
+        ssl_kwargs = {"ssl_context": self._ssl_context} if self._ssl_context else {}
         if environment == "development":
             if self._sandbox is None:
                 self._sandbox = APNs(
@@ -48,6 +51,7 @@ class APNsClient:
                     team_id=APNS_TEAM_ID,
                     topic=APNS_TOPIC,
                     use_sandbox=True,
+                    **ssl_kwargs,
                 )
             return self._sandbox
         if self._production is None:
@@ -57,6 +61,7 @@ class APNsClient:
                 team_id=APNS_TEAM_ID,
                 topic=APNS_TOPIC,
                 use_sandbox=False,
+                **ssl_kwargs,
             )
         return self._production
 
