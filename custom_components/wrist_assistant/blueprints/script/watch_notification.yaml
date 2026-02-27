@@ -13,14 +13,23 @@ blueprint:
     shows as info-only (title + message, no buttons).
   domain: script
   input:
+    title:
+      name: Title
+      description: Optional title displayed above the message.
+      default: ""
+      selector:
+        text:
     message:
       name: Message
       description: Notification body text.
       selector:
         text:
-    title:
-      name: Title
-      description: Optional title displayed above the message.
+    subtitle:
+      name: Subtitle
+      description: >
+        Custom subtitle shown below the message in accent color.
+        Overrides any entity state text. Leave empty to use
+        the entity state from the action sections below.
       default: ""
       selector:
         text:
@@ -73,6 +82,15 @@ blueprint:
           default: false
           selector:
             boolean:
+        action_1_entity_state:
+          name: Entity State
+          description: >
+            Jinja template for entity state shown below the notification
+            message (e.g. {{ states('lock.front_door') | title }}).
+            First non-empty entity state across all actions is used.
+          default: ""
+          selector:
+            template:
 
     section_action_2:
       name: Action 2
@@ -93,8 +111,7 @@ blueprint:
             action:
         action_2_icon:
           name: Icon (SF Symbol)
-          description: >
-            SF Symbol name shown in the button.
+          description: SF Symbol name shown in the button.
           default: ""
           selector:
             text:
@@ -110,6 +127,13 @@ blueprint:
           default: false
           selector:
             boolean:
+        action_2_entity_state:
+          name: Entity State
+          description: >
+            Jinja template for entity state shown below the message.
+          default: ""
+          selector:
+            template:
 
     section_action_3:
       name: Action 3
@@ -130,8 +154,7 @@ blueprint:
             action:
         action_3_icon:
           name: Icon (SF Symbol)
-          description: >
-            SF Symbol name shown in the button.
+          description: SF Symbol name shown in the button.
           default: ""
           selector:
             text:
@@ -147,6 +170,13 @@ blueprint:
           default: false
           selector:
             boolean:
+        action_3_entity_state:
+          name: Entity State
+          description: >
+            Jinja template for entity state shown below the message.
+          default: ""
+          selector:
+            template:
 
     section_action_4:
       name: Action 4
@@ -167,8 +197,7 @@ blueprint:
             action:
         action_4_icon:
           name: Icon (SF Symbol)
-          description: >
-            SF Symbol name shown in the button.
+          description: SF Symbol name shown in the button.
           default: ""
           selector:
             text:
@@ -184,6 +213,13 @@ blueprint:
           default: false
           selector:
             boolean:
+        action_4_entity_state:
+          name: Entity State
+          description: >
+            Jinja template for entity state shown below the message.
+          default: ""
+          selector:
+            template:
 
     section_behavior:
       name: Button Behavior
@@ -199,39 +235,6 @@ blueprint:
           default: false
           selector:
             boolean:
-
-    section_state:
-      name: Entity State
-      icon: mdi:information-outline
-      collapsed: true
-      input:
-        show_state:
-          name: Show Entity State
-          description: >
-            Display the entity's current state below the message
-            (e.g. "Locked", "On · 75%"). Uses the entity_state
-            template below.
-          default: false
-          selector:
-            boolean:
-        entity_state:
-          name: Entity State Template
-          description: >
-            Jinja template for the state text shown below the message.
-            Only used when Show Entity State is enabled. Examples:
-            {{ states('lock.front_door') | title }},
-            {{ states('light.bedroom') }} · {{ state_attr('light.bedroom', 'brightness') | int / 255 * 100 | round }}%
-          default: ""
-          selector:
-            template:
-        subtitle:
-          name: Custom Subtitle
-          description: >
-            Manual subtitle text. Overrides the entity state template
-            if both are set. Leave empty to use the entity state.
-          default: ""
-          selector:
-            text:
 
     section_options:
       name: Options
@@ -369,30 +372,32 @@ sequence:
   - variables:
       bp_message: !input message
       bp_title: !input title
+      bp_subtitle: !input subtitle
       bp_a1_title: !input action_1_title
       bp_a1: !input action_1
       bp_a1_icon: !input action_1_icon
       bp_a1_repeatable: !input action_1_repeatable
       bp_a1_confirm: !input action_1_confirm
+      bp_a1_entity_state: !input action_1_entity_state
       bp_a2_title: !input action_2_title
       bp_a2: !input action_2
       bp_a2_icon: !input action_2_icon
       bp_a2_repeatable: !input action_2_repeatable
       bp_a2_confirm: !input action_2_confirm
+      bp_a2_entity_state: !input action_2_entity_state
       bp_a3_title: !input action_3_title
       bp_a3: !input action_3
       bp_a3_icon: !input action_3_icon
       bp_a3_repeatable: !input action_3_repeatable
       bp_a3_confirm: !input action_3_confirm
+      bp_a3_entity_state: !input action_3_entity_state
       bp_a4_title: !input action_4_title
       bp_a4: !input action_4
       bp_a4_icon: !input action_4_icon
       bp_a4_repeatable: !input action_4_repeatable
       bp_a4_confirm: !input action_4_confirm
+      bp_a4_entity_state: !input action_4_entity_state
       bp_auto_dismiss: !input auto_dismiss
-      bp_show_state: !input show_state
-      bp_entity_state: !input entity_state
-      bp_subtitle: !input subtitle
       bp_priority: !input priority
       bp_sound: !input sound
       bp_target_device: !input target
@@ -410,10 +415,17 @@ sequence:
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- if bp_auto_dismiss %}{%- set d.items = d.items + [("auto_dismiss", true)] -%}{%- endif -%}
-      {%- if bp_subtitle %}{%- set d.items = d.items + [("subtitle", bp_subtitle)] -%}{%- endif -%}
-      {%- if bp_show_state and bp_entity_state -%}
-        {%- set rendered_state = bp_entity_state | string -%}
-        {%- if rendered_state %}{%- set d.items = d.items + [("entity_state", rendered_state), ("show_state", true)] -%}{%- endif -%}
+      {%- if bp_subtitle -%}
+        {%- set d.items = d.items + [("subtitle", bp_subtitle)] -%}
+      {%- else -%}
+        {%- set state_candidates = [bp_a1_entity_state, bp_a2_entity_state, bp_a3_entity_state, bp_a4_entity_state] -%}
+        {%- for candidate in state_candidates -%}
+          {%- set rendered = candidate | string | trim -%}
+          {%- if rendered -%}
+            {%- set d.items = d.items + [("entity_state", rendered)] -%}
+            {%- break -%}
+          {%- endif -%}
+        {%- endfor -%}
       {%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
