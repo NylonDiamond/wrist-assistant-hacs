@@ -414,15 +414,16 @@ sequence:
       {%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
-      {%- if bp_auto_dismiss %}{%- set d.items = d.items + [("auto_dismiss", true)] -%}{%- endif -%}
+      {%- set extra = namespace(items=[]) -%}
+      {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- if bp_subtitle -%}
-        {%- set d.items = d.items + [("subtitle", bp_subtitle)] -%}
+        {%- set extra.items = extra.items + [("subtitle", bp_subtitle)] -%}
       {%- else -%}
         {%- set state_candidates = [bp_a1_entity_state, bp_a2_entity_state, bp_a3_entity_state, bp_a4_entity_state] -%}
         {%- for candidate in state_candidates -%}
           {%- set rendered = candidate | string | trim -%}
           {%- if rendered -%}
-            {%- set d.items = d.items + [("entity_state", rendered)] -%}
+            {%- set extra.items = extra.items + [("entity_state", rendered)] -%}
             {%- break -%}
           {%- endif -%}
         {%- endfor -%}
@@ -463,4 +464,5 @@ sequence:
         {%- endif -%}
       {%- endfor -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
+      {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
       {{ dict(d.items) }}
