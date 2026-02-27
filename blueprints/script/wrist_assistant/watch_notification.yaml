@@ -72,6 +72,27 @@ blueprint:
           default: false
           selector:
             boolean:
+        section_action_1_subtitle:
+          name: Subtitle
+          icon: mdi:subtitles-outline
+          collapsed: true
+          input:
+            action_1_show_subtitle:
+              name: Show Subtitle
+              description: >
+                Show entity state below the button (e.g. "Locked",
+                "Open"). Auto-detected from the action's target entity.
+              default: true
+              selector:
+                boolean:
+            action_1_subtitle_template:
+              name: Custom Subtitle
+              description: >
+                Override auto-detected state with custom text or Jinja.
+                Example: {{ states('sensor.temperature') }}°F
+              default: ""
+              selector:
+                template:
 
     section_action_2:
       name: Action 2
@@ -108,6 +129,25 @@ blueprint:
           default: false
           selector:
             boolean:
+        section_action_2_subtitle:
+          name: Subtitle
+          icon: mdi:subtitles-outline
+          collapsed: true
+          input:
+            action_2_show_subtitle:
+              name: Show Subtitle
+              description: >
+                Show entity state below the button.
+              default: true
+              selector:
+                boolean:
+            action_2_subtitle_template:
+              name: Custom Subtitle
+              description: >
+                Override auto-detected state with custom text or Jinja.
+              default: ""
+              selector:
+                template:
 
     section_action_3:
       name: Action 3
@@ -144,6 +184,25 @@ blueprint:
           default: false
           selector:
             boolean:
+        section_action_3_subtitle:
+          name: Subtitle
+          icon: mdi:subtitles-outline
+          collapsed: true
+          input:
+            action_3_show_subtitle:
+              name: Show Subtitle
+              description: >
+                Show entity state below the button.
+              default: true
+              selector:
+                boolean:
+            action_3_subtitle_template:
+              name: Custom Subtitle
+              description: >
+                Override auto-detected state with custom text or Jinja.
+              default: ""
+              selector:
+                template:
 
     section_action_4:
       name: Action 4
@@ -180,30 +239,25 @@ blueprint:
           default: false
           selector:
             boolean:
-
-    section_subtitle:
-      name: Subtitle
-      icon: mdi:subtitles-outline
-      collapsed: true
-      input:
-        show_subtitle:
-          name: Show Subtitle
-          description: >
-            Show the action's target entity state below the buttons
-            (e.g. "Locked", "Open", "Off"). Automatically uses the
-            first action's target entity.
-          default: true
-          selector:
-            boolean:
-        subtitle_template:
-          name: Custom Subtitle
-          description: >
-            Override the auto-detected entity state with custom text
-            or a Jinja template. Only used when Show Subtitle is on.
-            Example: {{ states('sensor.temperature') }}°F
-          default: ""
-          selector:
-            template:
+        section_action_4_subtitle:
+          name: Subtitle
+          icon: mdi:subtitles-outline
+          collapsed: true
+          input:
+            action_4_show_subtitle:
+              name: Show Subtitle
+              description: >
+                Show entity state below the button.
+              default: true
+              selector:
+                boolean:
+            action_4_subtitle_template:
+              name: Custom Subtitle
+              description: >
+                Override auto-detected state with custom text or Jinja.
+              default: ""
+              selector:
+                template:
 
     section_behavior:
       name: Button Behavior
@@ -361,23 +415,29 @@ sequence:
       bp_a1_icon: !input action_1_icon
       bp_a1_repeatable: !input action_1_repeatable
       bp_a1_confirm: !input action_1_confirm
+      bp_a1_show_sub: !input action_1_show_subtitle
+      bp_a1_sub_tpl: !input action_1_subtitle_template
       bp_a2_title: !input action_2_title
       bp_a2: !input action_2
       bp_a2_icon: !input action_2_icon
       bp_a2_repeatable: !input action_2_repeatable
       bp_a2_confirm: !input action_2_confirm
+      bp_a2_show_sub: !input action_2_show_subtitle
+      bp_a2_sub_tpl: !input action_2_subtitle_template
       bp_a3_title: !input action_3_title
       bp_a3: !input action_3
       bp_a3_icon: !input action_3_icon
       bp_a3_repeatable: !input action_3_repeatable
       bp_a3_confirm: !input action_3_confirm
+      bp_a3_show_sub: !input action_3_show_subtitle
+      bp_a3_sub_tpl: !input action_3_subtitle_template
       bp_a4_title: !input action_4_title
       bp_a4: !input action_4
       bp_a4_icon: !input action_4_icon
       bp_a4_repeatable: !input action_4_repeatable
       bp_a4_confirm: !input action_4_confirm
-      bp_show_subtitle: !input show_subtitle
-      bp_subtitle_template: !input subtitle_template
+      bp_a4_show_sub: !input action_4_show_subtitle
+      bp_a4_sub_tpl: !input action_4_subtitle_template
       bp_auto_dismiss: !input auto_dismiss
       bp_priority: !input priority
       bp_sound: !input sound
@@ -397,14 +457,15 @@ sequence:
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
-      {%- set actions = namespace(list=[], first_eid='') -%}
+      {%- set actions = namespace(list=[]) -%}
+      {%- set subtitle = namespace(value='') -%}
       {%- set slots = [
-        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm),
-        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm),
-        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm),
-        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm),
+        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_show_sub, bp_a1_sub_tpl),
+        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_show_sub, bp_a2_sub_tpl),
+        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm, bp_a3_show_sub, bp_a3_sub_tpl),
+        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm, bp_a4_show_sub, bp_a4_sub_tpl),
       ] -%}
-      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm in slots -%}
+      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm, show_sub, sub_tpl in slots -%}
         {%- if steps is sequence and steps | length > 0 -%}
           {%- set step = steps[0] -%}
           {%- set full_svc = step.action | default(step.service | default('')) -%}
@@ -422,7 +483,15 @@ sequence:
                 {%- set eid = step.target.entity_id[0] -%}
               {%- endif -%}
             {%- endif -%}
-            {%- if eid and not actions.first_eid %}{%- set actions.first_eid = eid -%}{%- endif -%}
+            {%- if show_sub and not subtitle.value -%}
+              {%- set sub_text = sub_tpl | string | trim -%}
+              {%- if not sub_text and eid -%}
+                {%- set sub_text = states(eid) | default('', true) | title -%}
+              {%- endif -%}
+              {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
+                {%- set subtitle.value = sub_text -%}
+              {%- endif -%}
+            {%- endif -%}
             {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
             {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
             {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
@@ -433,15 +502,7 @@ sequence:
           {%- endif -%}
         {%- endif -%}
       {%- endfor -%}
-      {%- if bp_show_subtitle -%}
-        {%- set sub_text = bp_subtitle_template | string | trim -%}
-        {%- if not sub_text and actions.first_eid -%}
-          {%- set sub_text = states(actions.first_eid) | default('', true) | title -%}
-        {%- endif -%}
-        {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
-          {%- set extra.items = extra.items + [("entity_state", sub_text)] -%}
-        {%- endif -%}
-      {%- endif -%}
+      {%- if subtitle.value %}{%- set extra.items = extra.items + [("entity_state", subtitle.value)] -%}{%- endif -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
       {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
       {{ dict(d.items) }}
