@@ -433,7 +433,6 @@ sequence:
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
-      {%- set subtitle = namespace(value='') -%}
       {%- set slots = [
         (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_show_sub, bp_a1_sub_tpl),
         (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_show_sub, bp_a2_sub_tpl),
@@ -458,26 +457,25 @@ sequence:
                 {%- set eid = step.target.entity_id[0] -%}
               {%- endif -%}
             {%- endif -%}
-            {%- if show_sub and not subtitle.value -%}
-              {%- set sub_text = sub_tpl | string | trim -%}
-              {%- if not sub_text and eid -%}
-                {%- set sub_text = states(eid) | default('', true) | title -%}
-              {%- endif -%}
-              {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
-                {%- set subtitle.value = sub_text -%}
-              {%- endif -%}
-            {%- endif -%}
             {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
             {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
             {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
             {%- if btn_icon %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
             {%- if btn_repeatable %}{%- set a.items = a.items + [("repeatable", true)] -%}{%- endif -%}
             {%- if btn_confirm %}{%- set a.items = a.items + [("confirm", true)] -%}{%- endif -%}
+            {%- if show_sub -%}
+              {%- set sub_text = sub_tpl | string | trim -%}
+              {%- if not sub_text and eid -%}
+                {%- set sub_text = states(eid) | default('', true) | title -%}
+              {%- endif -%}
+              {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
+                {%- set a.items = a.items + [("subtitle", sub_text)] -%}
+              {%- endif -%}
+            {%- endif -%}
             {%- set actions.list = actions.list + [dict(a.items)] -%}
           {%- endif -%}
         {%- endif -%}
       {%- endfor -%}
-      {%- if subtitle.value %}{%- set extra.items = extra.items + [("entity_state", subtitle.value)] -%}{%- endif -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
       {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
       {{ dict(d.items) }}
