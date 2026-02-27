@@ -89,6 +89,14 @@ blueprint:
           default: ""
           selector:
             template:
+        action_1_live_subtitle:
+          name: Live Subtitle
+          description: >
+            Re-fetch entity state after button tap to update the subtitle
+            in real time. Adds a small network call per tap.
+          default: false
+          selector:
+            boolean:
 
     section_action_2:
       name: Action 2
@@ -137,6 +145,13 @@ blueprint:
           default: ""
           selector:
             template:
+        action_2_live_subtitle:
+          name: Live Subtitle
+          description: >
+            Re-fetch entity state after button tap to update the subtitle.
+          default: false
+          selector:
+            boolean:
 
     section_action_3:
       name: Action 3
@@ -185,6 +200,13 @@ blueprint:
           default: ""
           selector:
             template:
+        action_3_live_subtitle:
+          name: Live Subtitle
+          description: >
+            Re-fetch entity state after button tap to update the subtitle.
+          default: false
+          selector:
+            boolean:
 
     section_action_4:
       name: Action 4
@@ -233,6 +255,13 @@ blueprint:
           default: ""
           selector:
             template:
+        action_4_live_subtitle:
+          name: Live Subtitle
+          description: >
+            Re-fetch entity state after button tap to update the subtitle.
+          default: false
+          selector:
+            boolean:
 
     section_behavior:
       name: Button Behavior
@@ -392,6 +421,7 @@ sequence:
       bp_a1_confirm: !input action_1_confirm
       bp_a1_show_sub: !input action_1_show_subtitle
       bp_a1_sub_tpl: !input action_1_subtitle_template
+      bp_a1_live_sub: !input action_1_live_subtitle
       bp_a2_title: !input action_2_title
       bp_a2: !input action_2
       bp_a2_icon: !input action_2_icon
@@ -399,6 +429,7 @@ sequence:
       bp_a2_confirm: !input action_2_confirm
       bp_a2_show_sub: !input action_2_show_subtitle
       bp_a2_sub_tpl: !input action_2_subtitle_template
+      bp_a2_live_sub: !input action_2_live_subtitle
       bp_a3_title: !input action_3_title
       bp_a3: !input action_3
       bp_a3_icon: !input action_3_icon
@@ -406,6 +437,7 @@ sequence:
       bp_a3_confirm: !input action_3_confirm
       bp_a3_show_sub: !input action_3_show_subtitle
       bp_a3_sub_tpl: !input action_3_subtitle_template
+      bp_a3_live_sub: !input action_3_live_subtitle
       bp_a4_title: !input action_4_title
       bp_a4: !input action_4
       bp_a4_icon: !input action_4_icon
@@ -413,6 +445,7 @@ sequence:
       bp_a4_confirm: !input action_4_confirm
       bp_a4_show_sub: !input action_4_show_subtitle
       bp_a4_sub_tpl: !input action_4_subtitle_template
+      bp_a4_live_sub: !input action_4_live_subtitle
       bp_auto_dismiss: !input auto_dismiss
       bp_priority: !input priority
       bp_sound: !input sound
@@ -434,12 +467,12 @@ sequence:
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_show_sub, bp_a1_sub_tpl),
-        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_show_sub, bp_a2_sub_tpl),
-        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm, bp_a3_show_sub, bp_a3_sub_tpl),
-        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm, bp_a4_show_sub, bp_a4_sub_tpl),
+        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_show_sub, bp_a1_sub_tpl, bp_a1_live_sub),
+        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_show_sub, bp_a2_sub_tpl, bp_a2_live_sub),
+        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm, bp_a3_show_sub, bp_a3_sub_tpl, bp_a3_live_sub),
+        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm, bp_a4_show_sub, bp_a4_sub_tpl, bp_a4_live_sub),
       ] -%}
-      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm, show_sub, sub_tpl in slots -%}
+      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm, show_sub, sub_tpl, live_sub in slots -%}
         {%- if steps is sequence and steps | length > 0 -%}
           {%- set step = steps[0] -%}
           {%- set full_svc = step.action | default(step.service | default('')) -%}
@@ -470,6 +503,9 @@ sequence:
               {%- endif -%}
               {%- if sub_text and sub_text not in ['Unavailable', 'Unknown'] -%}
                 {%- set a.items = a.items + [("subtitle", sub_text)] -%}
+              {%- endif -%}
+              {%- if live_sub and eid -%}
+                {%- set a.items = a.items + [("live_subtitle", true)] -%}
               {%- endif -%}
             {%- endif -%}
             {%- set actions.list = actions.list + [dict(a.items)] -%}

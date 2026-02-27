@@ -90,6 +90,7 @@ _ACTION_SCHEMA = vol.Schema(
         vol.Optional("confirm", default=False): cv.boolean,
         vol.Optional("icon"): cv.string,
         vol.Optional("subtitle"): cv.string,
+        vol.Optional("live_subtitle", default=False): cv.boolean,
     }
 )
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(
