@@ -5,8 +5,8 @@ blueprint:
     Send actionable push notifications to your Apple Watch.
 
 
-    Define up to 4 action buttons. Pick an entity, give the button a label,
-    and choose which service to call when tapped.
+    Define up to 4 action buttons using Home Assistant's native service
+    picker. Choose any service, target entity, and service data.
 
 
     Leave action slots empty to skip them. A notification with no actions
@@ -30,12 +30,6 @@ blueprint:
       icon: mdi:gesture-tap-button
       collapsed: false
       input:
-        action_1_entity:
-          name: Entity
-          description: Entity for this action button to act on.
-          default: ""
-          selector:
-            entity:
         action_1_title:
           name: Button Label
           description: >
@@ -44,240 +38,68 @@ blueprint:
           default: ""
           selector:
             text:
-        action_1_service:
-          name: Service
+        action_1:
+          name: Action
           description: >
-            Service to call when tapped. Domain is auto-detected
-            from the entity.
-          default: ""
+            Service to call when the button is tapped. Use the picker
+            to choose any service, target entity, and service data.
+          default: []
           selector:
-            select:
-              custom_value: true
-              mode: dropdown
-              options:
-                - label: "None"
-                  value: ""
-                - label: "Toggle"
-                  value: "toggle"
-                - label: "Turn On"
-                  value: "turn_on"
-                - label: "Turn Off"
-                  value: "turn_off"
-                - label: "Lock"
-                  value: "lock"
-                - label: "Unlock"
-                  value: "unlock"
-                - label: "Open Cover"
-                  value: "open_cover"
-                - label: "Close Cover"
-                  value: "close_cover"
-                - label: "Open Valve"
-                  value: "open_valve"
-                - label: "Close Valve"
-                  value: "close_valve"
-                - label: "Arm Home"
-                  value: "alarm_arm_home"
-                - label: "Arm Away"
-                  value: "alarm_arm_away"
-                - label: "Disarm"
-                  value: "alarm_disarm"
-                - label: "Start (vacuum)"
-                  value: "start"
-                - label: "Pause (vacuum)"
-                  value: "pause"
-                - label: "Return to Base (vacuum)"
-                  value: "return_to_base"
-                - label: "Activate (scene)"
-                  value: "turn_on"
+            action:
 
     section_action_2:
       name: Action 2
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_2_entity:
-          name: Entity
-          description: Entity for this action button to act on.
-          default: ""
-          selector:
-            entity:
         action_2_title:
           name: Button Label
           description: Text shown on the button.
           default: ""
           selector:
             text:
-        action_2_service:
-          name: Service
-          description: >
-            Service to call when tapped. Domain is auto-detected
-            from the entity.
-          default: ""
+        action_2:
+          name: Action
+          description: Service to call when the button is tapped.
+          default: []
           selector:
-            select:
-              custom_value: true
-              mode: dropdown
-              options:
-                - label: "None"
-                  value: ""
-                - label: "Toggle"
-                  value: "toggle"
-                - label: "Turn On"
-                  value: "turn_on"
-                - label: "Turn Off"
-                  value: "turn_off"
-                - label: "Lock"
-                  value: "lock"
-                - label: "Unlock"
-                  value: "unlock"
-                - label: "Open Cover"
-                  value: "open_cover"
-                - label: "Close Cover"
-                  value: "close_cover"
-                - label: "Open Valve"
-                  value: "open_valve"
-                - label: "Close Valve"
-                  value: "close_valve"
-                - label: "Arm Home"
-                  value: "alarm_arm_home"
-                - label: "Arm Away"
-                  value: "alarm_arm_away"
-                - label: "Disarm"
-                  value: "alarm_disarm"
-                - label: "Start (vacuum)"
-                  value: "start"
-                - label: "Pause (vacuum)"
-                  value: "pause"
-                - label: "Return to Base (vacuum)"
-                  value: "return_to_base"
-                - label: "Activate (scene)"
-                  value: "turn_on"
+            action:
 
     section_action_3:
       name: Action 3
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_3_entity:
-          name: Entity
-          description: Entity for this action button to act on.
-          default: ""
-          selector:
-            entity:
         action_3_title:
           name: Button Label
           description: Text shown on the button.
           default: ""
           selector:
             text:
-        action_3_service:
-          name: Service
-          description: >
-            Service to call when tapped. Domain is auto-detected
-            from the entity.
-          default: ""
+        action_3:
+          name: Action
+          description: Service to call when the button is tapped.
+          default: []
           selector:
-            select:
-              custom_value: true
-              mode: dropdown
-              options:
-                - label: "None"
-                  value: ""
-                - label: "Toggle"
-                  value: "toggle"
-                - label: "Turn On"
-                  value: "turn_on"
-                - label: "Turn Off"
-                  value: "turn_off"
-                - label: "Lock"
-                  value: "lock"
-                - label: "Unlock"
-                  value: "unlock"
-                - label: "Open Cover"
-                  value: "open_cover"
-                - label: "Close Cover"
-                  value: "close_cover"
-                - label: "Open Valve"
-                  value: "open_valve"
-                - label: "Close Valve"
-                  value: "close_valve"
-                - label: "Arm Home"
-                  value: "alarm_arm_home"
-                - label: "Arm Away"
-                  value: "alarm_arm_away"
-                - label: "Disarm"
-                  value: "alarm_disarm"
-                - label: "Start (vacuum)"
-                  value: "start"
-                - label: "Pause (vacuum)"
-                  value: "pause"
-                - label: "Return to Base (vacuum)"
-                  value: "return_to_base"
-                - label: "Activate (scene)"
-                  value: "turn_on"
+            action:
 
     section_action_4:
       name: Action 4
       icon: mdi:gesture-tap-button
       collapsed: true
       input:
-        action_4_entity:
-          name: Entity
-          description: Entity for this action button to act on.
-          default: ""
-          selector:
-            entity:
         action_4_title:
           name: Button Label
           description: Text shown on the button.
           default: ""
           selector:
             text:
-        action_4_service:
-          name: Service
-          description: >
-            Service to call when tapped. Domain is auto-detected
-            from the entity.
-          default: ""
+        action_4:
+          name: Action
+          description: Service to call when the button is tapped.
+          default: []
           selector:
-            select:
-              custom_value: true
-              mode: dropdown
-              options:
-                - label: "None"
-                  value: ""
-                - label: "Toggle"
-                  value: "toggle"
-                - label: "Turn On"
-                  value: "turn_on"
-                - label: "Turn Off"
-                  value: "turn_off"
-                - label: "Lock"
-                  value: "lock"
-                - label: "Unlock"
-                  value: "unlock"
-                - label: "Open Cover"
-                  value: "open_cover"
-                - label: "Close Cover"
-                  value: "close_cover"
-                - label: "Open Valve"
-                  value: "open_valve"
-                - label: "Close Valve"
-                  value: "close_valve"
-                - label: "Arm Home"
-                  value: "alarm_arm_home"
-                - label: "Arm Away"
-                  value: "alarm_arm_away"
-                - label: "Disarm"
-                  value: "alarm_disarm"
-                - label: "Start (vacuum)"
-                  value: "start"
-                - label: "Pause (vacuum)"
-                  value: "pause"
-                - label: "Return to Base (vacuum)"
-                  value: "return_to_base"
-                - label: "Activate (scene)"
-                  value: "turn_on"
+            action:
 
     section_options:
       name: Options
@@ -348,18 +170,14 @@ sequence:
   - variables:
       bp_message: !input message
       bp_title: !input title
-      bp_a1_entity: !input action_1_entity
       bp_a1_title: !input action_1_title
-      bp_a1_service: !input action_1_service
-      bp_a2_entity: !input action_2_entity
+      bp_a1: !input action_1
       bp_a2_title: !input action_2_title
-      bp_a2_service: !input action_2_service
-      bp_a3_entity: !input action_3_entity
+      bp_a2: !input action_2
       bp_a3_title: !input action_3_title
-      bp_a3_service: !input action_3_service
-      bp_a4_entity: !input action_4_entity
+      bp_a3: !input action_3
       bp_a4_title: !input action_4_title
-      bp_a4_service: !input action_4_service
+      bp_a4: !input action_4
       bp_priority: !input priority
       bp_sound: !input sound
       bp_target_device: !input target
@@ -378,17 +196,34 @@ sequence:
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_a1_entity, bp_a1_title, bp_a1_service),
-        (bp_a2_entity, bp_a2_title, bp_a2_service),
-        (bp_a3_entity, bp_a3_title, bp_a3_service),
-        (bp_a4_entity, bp_a4_title, bp_a4_service),
+        (bp_a1_title, bp_a1),
+        (bp_a2_title, bp_a2),
+        (bp_a3_title, bp_a3),
+        (bp_a4_title, bp_a4),
       ] -%}
-      {%- for entity, title, svc in slots -%}
-        {%- if entity and svc -%}
-          {%- set domain = entity.split('.')[0] -%}
-          {%- set btn_title = title if title else svc | replace('_', ' ') | title -%}
-          {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc), ("entity_id", entity)]) -%}
-          {%- set actions.list = actions.list + [dict(a.items)] -%}
+      {%- for btn_label, steps in slots -%}
+        {%- if steps is sequence and steps | length > 0 -%}
+          {%- set step = steps[0] -%}
+          {%- set full_svc = step.action | default(step.service | default('')) -%}
+          {%- if full_svc -%}
+            {%- set domain = full_svc.split('.')[0] -%}
+            {%- set svc = full_svc.split('.')[1] | default(full_svc) -%}
+            {%- set auto_title = svc | replace('_', ' ') | title -%}
+            {%- set btn_title = btn_label if btn_label else auto_title -%}
+            {%- set svc_data = step.data | default({}) -%}
+            {%- set eid = '' -%}
+            {%- if step.target is defined and step.target.entity_id is defined -%}
+              {%- if step.target.entity_id is string -%}
+                {%- set eid = step.target.entity_id -%}
+              {%- elif step.target.entity_id is sequence and step.target.entity_id | length > 0 -%}
+                {%- set eid = step.target.entity_id[0] -%}
+              {%- endif -%}
+            {%- endif -%}
+            {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
+            {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
+            {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
+            {%- set actions.list = actions.list + [dict(a.items)] -%}
+          {%- endif -%}
         {%- endif -%}
       {%- endfor -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
