@@ -66,25 +66,16 @@ send_notification:
       example: "my-watch-id"
       selector:
         text:
-    category:
-      name: Category
+    actions:
+      name: Actions
       description: >-
-        Notification category for actionable notifications.
+        List of action buttons (1-4) shown on the notification. Each action
+        has a title displayed on the button, and a domain/service to call
+        when tapped. Optional: entity_id, service_data, destructive styling.
+        Example: [{title: "Lock", domain: "lock", service: "lock",
+        entity_id: "lock.front_door"}, {title: "Ignore", destructive: true}]
       selector:
-        select:
-          options:
-            - "ENTITY_TOGGLE"
-            - "ENTITY_TURN_ON"
-            - "ENTITY_TURN_OFF"
-            - "OPEN_CONTROL"
-            - "CLOSE_CONTROL"
-            - "LOCK_CONTROL"
-            - "UNLOCK_CONTROL"
-            - "ALARM_CONTROL"
-            - "VACUUM_CONTROL"
-            - "CONFIRM_ACTION"
-            - "SCENE_ACTIVATE"
-            - "HA_CUSTOM"
+        object:
     data:
       name: Data
       description: >-

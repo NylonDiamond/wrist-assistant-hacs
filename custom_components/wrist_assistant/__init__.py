@@ -78,12 +78,24 @@ _CREATE_PAIRING_SCHEMA = vol.Schema(
         ),
     }
 )
+_ACTION_SCHEMA = vol.Schema(
+    {
+        vol.Required("title"): cv.string,
+        vol.Optional("domain"): cv.string,
+        vol.Optional("service"): cv.string,
+        vol.Optional("service_data"): dict,
+        vol.Optional("entity_id"): cv.string,
+        vol.Optional("destructive", default=False): cv.boolean,
+    }
+)
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(
     {
         vol.Required("message"): cv.string,
         vol.Optional("title"): cv.string,
         vol.Optional("target"): cv.string,
-        vol.Optional("category"): cv.string,
+        vol.Optional("actions"): vol.All(
+            cv.ensure_list, [_ACTION_SCHEMA], vol.Length(min=1, max=4)
+        ),
         vol.Optional("data"): dict,
         vol.Optional("sound"): cv.string,
         vol.Optional("push_type", default="alert"): vol.In(["alert", "background"]),
@@ -210,8 +222,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         target = call.data.get("target")
         message = call.data["message"]
         title = call.data.get("title")
-        category = call.data.get("category")
+        actions = call.data.get("actions")
+        category = "WA_ACTIONS" if actions else None
         extra_data = dict(call.data.get("data") or {})
+        if actions:
+            extra_data["actions"] = actions
         for key in ("tag", "group", "priority"):
             if (val := call.data.get(key)) is not None:
                 extra_data[key] = val

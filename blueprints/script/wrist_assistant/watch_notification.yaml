@@ -1,16 +1,17 @@
 blueprint:
-  name: "⌚ Wrist Assistant – Watch Notification"
+  name: "Watch Notification"
   author: "Wrist Assistant"
   description: >
-    Send rich, actionable push notifications straight to your Apple Watch.
+    Send actionable push notifications to your Apple Watch.
 
 
-    Pick a **category** to add quick-action buttons (toggle, lock, vacuum, alarm, etc.)
-    and point them at any Home Assistant entity — no YAML required.
+    Define up to 4 action buttons — each calls a Home Assistant service
+    when tapped. Use `domain.service` format (e.g. `light.toggle`,
+    `lock.lock`, `vacuum.return_to_base`).
 
 
-    **Quick start:** fill in the message below, save the script, then call it
-    from any automation.
+    Leave action slots empty to skip them. A notification with no actions
+    shows as info-only (title + message, no buttons).
   domain: script
   input:
     message:
@@ -24,40 +25,82 @@ blueprint:
       default: ""
       selector:
         text:
-    category:
-      name: Category
-      description: Action buttons shown on the notification.
+    action_1_title:
+      name: Action 1 Title
+      description: Button label for the first action.
       default: ""
       selector:
-        select:
-          mode: dropdown
-          options:
-            - label: "None (info only)"
-              value: ""
-            - label: "Toggle Entity"
-              value: "ENTITY_TOGGLE"
-            - label: "Turn On Entity"
-              value: "ENTITY_TURN_ON"
-            - label: "Turn Off Entity"
-              value: "ENTITY_TURN_OFF"
-            - label: "Open (cover/valve)"
-              value: "OPEN_CONTROL"
-            - label: "Close (cover/valve)"
-              value: "CLOSE_CONTROL"
-            - label: "Lock"
-              value: "LOCK_CONTROL"
-            - label: "Unlock"
-              value: "UNLOCK_CONTROL"
-            - label: "Alarm Control"
-              value: "ALARM_CONTROL"
-            - label: "Vacuum Control (start, pause, return home)"
-              value: "VACUUM_CONTROL"
-            - label: "Confirm Action"
-              value: "CONFIRM_ACTION"
-            - label: "Activate Scene"
-              value: "SCENE_ACTIVATE"
-            - label: "Custom HA Actions"
-              value: "HA_CUSTOM"
+        text:
+    action_1_service:
+      name: Action 1 Service
+      description: >
+        Service to call (domain.service format, e.g. light.toggle).
+      default: ""
+      selector:
+        text:
+    action_1_entity:
+      name: Action 1 Entity
+      description: Entity to pass to the service call.
+      default: ""
+      selector:
+        entity:
+    action_2_title:
+      name: Action 2 Title
+      description: Button label for the second action.
+      default: ""
+      selector:
+        text:
+    action_2_service:
+      name: Action 2 Service
+      description: >
+        Service to call (domain.service format, e.g. lock.lock).
+      default: ""
+      selector:
+        text:
+    action_2_entity:
+      name: Action 2 Entity
+      description: Entity to pass to the service call.
+      default: ""
+      selector:
+        entity:
+    action_3_title:
+      name: Action 3 Title
+      description: Button label for the third action.
+      default: ""
+      selector:
+        text:
+    action_3_service:
+      name: Action 3 Service
+      description: >
+        Service to call (domain.service format).
+      default: ""
+      selector:
+        text:
+    action_3_entity:
+      name: Action 3 Entity
+      description: Entity to pass to the service call.
+      default: ""
+      selector:
+        entity:
+    action_4_title:
+      name: Action 4 Title
+      description: Button label for the fourth action.
+      default: ""
+      selector:
+        text:
+    action_4_service:
+      name: Action 4 Service
+      description: >
+        Service to call (domain.service format).
+      default: ""
+      selector:
+        text:
+    action_4_entity:
+      name: Action 4 Entity
+      description: Entity to pass to the service call.
+      default: ""
+      selector:
+        entity:
     priority:
       name: Priority
       description: >
@@ -113,53 +156,6 @@ blueprint:
       default: ""
       selector:
         text:
-    action_entity:
-      name: Action Entity
-      description: >
-        Entity for action buttons to act on. Required for categories like
-        Toggle, Turn On/Off, Open/Close, Lock/Unlock, and Scene Activate.
-      default: ""
-      selector:
-        entity:
-    action_service:
-      name: Action Service
-      description: >
-        Service for the Confirm Action category. Domain is auto-detected
-        from the Action Entity.
-      default: ""
-      selector:
-        select:
-          custom_value: true
-          mode: dropdown
-          options:
-            - label: "None"
-              value: ""
-            - label: "Turn On"
-              value: "turn_on"
-            - label: "Turn Off"
-              value: "turn_off"
-            - label: "Toggle"
-              value: "toggle"
-            - label: "Open Cover"
-              value: "open_cover"
-            - label: "Close Cover"
-              value: "close_cover"
-            - label: "Lock"
-              value: "lock"
-            - label: "Unlock"
-              value: "unlock"
-            - label: "Arm Home"
-              value: "alarm_arm_home"
-            - label: "Arm Away"
-              value: "alarm_arm_away"
-            - label: "Disarm"
-              value: "alarm_disarm"
-            - label: "Start (vacuum)"
-              value: "start"
-            - label: "Pause (vacuum)"
-              value: "pause"
-            - label: "Return to Base (vacuum)"
-              value: "return_to_base"
 
 mode: parallel
 max: 10
@@ -168,19 +164,27 @@ sequence:
   - variables:
       bp_message: !input message
       bp_title: !input title
-      bp_category: !input category
+      bp_a1_title: !input action_1_title
+      bp_a1_service: !input action_1_service
+      bp_a1_entity: !input action_1_entity
+      bp_a2_title: !input action_2_title
+      bp_a2_service: !input action_2_service
+      bp_a2_entity: !input action_2_entity
+      bp_a3_title: !input action_3_title
+      bp_a3_service: !input action_3_service
+      bp_a3_entity: !input action_3_entity
+      bp_a4_title: !input action_4_title
+      bp_a4_service: !input action_4_service
+      bp_a4_entity: !input action_4_entity
       bp_priority: !input priority
       bp_sound: !input sound
       bp_target_device: !input target
       bp_tag: !input tag
       bp_group: !input group
-      bp_action_entity: !input action_entity
-      bp_action_service: !input action_service
   - service: wrist_assistant.send_notification
     data: >
       {%- set d = namespace(items=[("message", bp_message), ("priority", bp_priority)]) -%}
       {%- if bp_title %}{%- set d.items = d.items + [("title", bp_title)] -%}{%- endif -%}
-      {%- if bp_category %}{%- set d.items = d.items + [("category", bp_category)] -%}{%- endif -%}
       {%- if bp_sound %}{%- set d.items = d.items + [("sound", bp_sound)] -%}{%- endif -%}
       {%- if bp_target_device -%}
         {%- set ids = device_attr(bp_target_device, 'identifiers') | list -%}
@@ -188,11 +192,22 @@ sequence:
       {%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
-      {%- set extra = namespace(items=[]) -%}
-      {%- if bp_action_entity -%}
-        {%- set extra.items = extra.items + [("entity_id", bp_action_entity)] -%}
-        {%- set extra.items = extra.items + [("domain", bp_action_entity.split('.')[0])] -%}
-      {%- endif -%}
-      {%- if bp_action_service %}{%- set extra.items = extra.items + [("service", bp_action_service)] -%}{%- endif -%}
-      {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
+      {%- set actions = namespace(list=[]) -%}
+      {%- set slots = [
+        (bp_a1_title, bp_a1_service, bp_a1_entity),
+        (bp_a2_title, bp_a2_service, bp_a2_entity),
+        (bp_a3_title, bp_a3_service, bp_a3_entity),
+        (bp_a4_title, bp_a4_service, bp_a4_entity),
+      ] -%}
+      {%- for title, svc, entity in slots -%}
+        {%- if title -%}
+          {%- set a = namespace(items=[("title", title)]) -%}
+          {%- if svc and '.' in svc -%}
+            {%- set a.items = a.items + [("domain", svc.split('.')[0]), ("service", svc.split('.')[1])] -%}
+          {%- endif -%}
+          {%- if entity %}{%- set a.items = a.items + [("entity_id", entity)] -%}{%- endif -%}
+          {%- set actions.list = actions.list + [dict(a.items)] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
       {{ dict(d.items) }}
