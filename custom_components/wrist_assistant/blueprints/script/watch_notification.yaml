@@ -72,27 +72,23 @@ blueprint:
           default: false
           selector:
             boolean:
-        section_action_1_subtitle:
-          name: Subtitle
-          icon: mdi:subtitles-outline
-          collapsed: true
-          input:
-            action_1_show_subtitle:
-              name: Show Subtitle
-              description: >
-                Show entity state below the button (e.g. "Locked",
-                "Open"). Auto-detected from the action's target entity.
-              default: true
-              selector:
-                boolean:
-            action_1_subtitle_template:
-              name: Custom Subtitle
-              description: >
-                Override auto-detected state with custom text or Jinja.
-                Example: {{ states('sensor.temperature') }}°F
-              default: ""
-              selector:
-                template:
+        action_1_show_subtitle:
+          name: Show Subtitle
+          description: >
+            Show entity state below the buttons (e.g. "Locked",
+            "Open"). Auto-detected from this action's target entity.
+            First action with subtitle enabled is used.
+          default: true
+          selector:
+            boolean:
+        action_1_subtitle_template:
+          name: Custom Subtitle
+          description: >
+            Override auto-detected state with custom text or Jinja.
+            Example: {{ states('sensor.temperature') }}°F
+          default: ""
+          selector:
+            template:
 
     section_action_2:
       name: Action 2
@@ -129,25 +125,18 @@ blueprint:
           default: false
           selector:
             boolean:
-        section_action_2_subtitle:
-          name: Subtitle
-          icon: mdi:subtitles-outline
-          collapsed: true
-          input:
-            action_2_show_subtitle:
-              name: Show Subtitle
-              description: >
-                Show entity state below the button.
-              default: true
-              selector:
-                boolean:
-            action_2_subtitle_template:
-              name: Custom Subtitle
-              description: >
-                Override auto-detected state with custom text or Jinja.
-              default: ""
-              selector:
-                template:
+        action_2_show_subtitle:
+          name: Show Subtitle
+          description: Show entity state below the buttons.
+          default: true
+          selector:
+            boolean:
+        action_2_subtitle_template:
+          name: Custom Subtitle
+          description: Override auto-detected state with custom text or Jinja.
+          default: ""
+          selector:
+            template:
 
     section_action_3:
       name: Action 3
@@ -184,25 +173,18 @@ blueprint:
           default: false
           selector:
             boolean:
-        section_action_3_subtitle:
-          name: Subtitle
-          icon: mdi:subtitles-outline
-          collapsed: true
-          input:
-            action_3_show_subtitle:
-              name: Show Subtitle
-              description: >
-                Show entity state below the button.
-              default: true
-              selector:
-                boolean:
-            action_3_subtitle_template:
-              name: Custom Subtitle
-              description: >
-                Override auto-detected state with custom text or Jinja.
-              default: ""
-              selector:
-                template:
+        action_3_show_subtitle:
+          name: Show Subtitle
+          description: Show entity state below the buttons.
+          default: true
+          selector:
+            boolean:
+        action_3_subtitle_template:
+          name: Custom Subtitle
+          description: Override auto-detected state with custom text or Jinja.
+          default: ""
+          selector:
+            template:
 
     section_action_4:
       name: Action 4
@@ -239,25 +221,18 @@ blueprint:
           default: false
           selector:
             boolean:
-        section_action_4_subtitle:
-          name: Subtitle
-          icon: mdi:subtitles-outline
-          collapsed: true
-          input:
-            action_4_show_subtitle:
-              name: Show Subtitle
-              description: >
-                Show entity state below the button.
-              default: true
-              selector:
-                boolean:
-            action_4_subtitle_template:
-              name: Custom Subtitle
-              description: >
-                Override auto-detected state with custom text or Jinja.
-              default: ""
-              selector:
-                template:
+        action_4_show_subtitle:
+          name: Show Subtitle
+          description: Show entity state below the buttons.
+          default: true
+          selector:
+            boolean:
+        action_4_subtitle_template:
+          name: Custom Subtitle
+          description: Override auto-detected state with custom text or Jinja.
+          default: ""
+          selector:
+            template:
 
     section_behavior:
       name: Button Behavior
