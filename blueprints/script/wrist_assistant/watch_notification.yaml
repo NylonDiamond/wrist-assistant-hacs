@@ -127,16 +127,78 @@ blueprint:
                   value: "critical"
         sound:
           name: Sound
-          description: Notification sound.
+          description: >
+            Notification sound. Preview sounds at
+            mixkit.co/free-sound-effects/notification/ or in the iOS app
+            under Settings > Notification Sounds.
           default: "default"
           selector:
             select:
               mode: dropdown
+              custom_value: true
               options:
                 - label: "Default sound"
                   value: "default"
                 - label: "Silent"
                   value: ""
+                - label: "Access Allowed"
+                  value: "Access-Allowed.caf"
+                - label: "Arabian Harp"
+                  value: "Arabian-Harp.caf"
+                - label: "ATM Keypress"
+                  value: "ATM-Keypress.caf"
+                - label: "Bell"
+                  value: "Bell.caf"
+                - label: "Bubble Pop"
+                  value: "Bubble-Pop.caf"
+                - label: "Clear Announce"
+                  value: "Clear-Announce.caf"
+                - label: "Confirmation"
+                  value: "Confirmation.caf"
+                - label: "Correct Answer"
+                  value: "Correct-Answer.caf"
+                - label: "Correct Answer Reward"
+                  value: "Correct-Answer-Reward.caf"
+                - label: "Digital Quick"
+                  value: "Digital-Quick.caf"
+                - label: "Doorbell Single"
+                  value: "Doorbell-Single.caf"
+                - label: "Doorbell Tone"
+                  value: "Doorbell-Tone.caf"
+                - label: "Dry Pop"
+                  value: "Dry-Pop.caf"
+                - label: "Elevator Tone"
+                  value: "Elevator-Tone.caf"
+                - label: "Gaming Lock"
+                  value: "Gaming-Lock.caf"
+                - label: "Guitar Alert"
+                  value: "Guitar-Alert.caf"
+                - label: "Happy Bells"
+                  value: "Happy-Bells.caf"
+                - label: "Interface Back"
+                  value: "Interface-Back.caf"
+                - label: "Interface Remove"
+                  value: "Interface-Remove.caf"
+                - label: "Interface Start"
+                  value: "Interface-Start.caf"
+                - label: "Light Button"
+                  value: "Light-Button.caf"
+                - label: "Long Pop"
+                  value: "Long-Pop.caf"
+                - label: "Magic Marimba"
+                  value: "Magic-Marimba.caf"
+                - label: "Magic Ring"
+                  value: "Magic-Ring.caf"
+                - label: "Option Select"
+                  value: "Option-Select.caf"
+                - label: "Positive"
+                  value: "Positive.caf"
+                - label: "Sci-Fi Click"
+                  value: "Sci-Fi-Click.caf"
+                - label: "Tile Reveal"
+                  value: "Tile-Reveal.caf"
+                - label: "Wrong Answer"
+                  value: "Wrong-Answer.caf"
         target:
           name: Target Watch
           description: >
@@ -146,19 +208,24 @@ blueprint:
             device:
               filter:
                 - integration: wrist_assistant
+                  model: Apple Watch
         tag:
           name: Tag
           description: >
-            Collapse key. A new notification with the same tag replaces the
-            previous one instead of stacking.
+            Collapse key — a new notification with the same tag replaces the
+            previous one instead of stacking. For example, set tag to
+            "front_door" on a door-open alert so repeated opens show only
+            the latest notification rather than piling up.
           default: ""
           selector:
             text:
         group:
           name: Group
           description: >
-            Thread ID to group related notifications together in the watch
-            notification center.
+            Groups related notifications together in the watch notification
+            center. For example, two scripts both using group "motion" will
+            bundle into a single expandable stack instead of appearing as
+            separate entries.
           default: ""
           selector:
             text:
