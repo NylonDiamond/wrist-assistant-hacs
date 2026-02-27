@@ -86,6 +86,9 @@ _ACTION_SCHEMA = vol.Schema(
         vol.Optional("service_data"): dict,
         vol.Optional("entity_id"): cv.string,
         vol.Optional("destructive", default=False): cv.boolean,
+        vol.Optional("repeatable", default=False): cv.boolean,
+        vol.Optional("confirm", default=False): cv.boolean,
+        vol.Optional("icon"): cv.string,
     }
 )
 _SEND_NOTIFICATION_SCHEMA = vol.Schema(

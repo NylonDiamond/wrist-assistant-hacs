@@ -34,7 +34,8 @@ blueprint:
           name: Button Label
           description: >
             Text shown on the button. Leave blank to auto-generate
-            from the service name (e.g. "Turn On").
+            from the service name (e.g. "Turn On"). Leave empty with
+            an icon set to show icon-only.
           default: ""
           selector:
             text:
@@ -46,6 +47,32 @@ blueprint:
           default: []
           selector:
             action:
+        action_1_icon:
+          name: Icon (SF Symbol)
+          description: >
+            SF Symbol name shown in the button (e.g. "lock.fill",
+            "lightbulb.fill"). Browse symbols at
+            developer.apple.com/sf-symbols/
+          default: ""
+          selector:
+            text:
+        action_1_repeatable:
+          name: Repeatable
+          description: >
+            Button resets after success so it can be tapped again.
+            Useful for toggles (e.g. light on/off).
+          default: false
+          selector:
+            boolean:
+        action_1_confirm:
+          name: Require Confirmation
+          description: >
+            Requires a second tap to execute. First tap shows
+            "Confirm?" — helps prevent accidental taps on
+            sensitive actions like unlock or disarm.
+          default: false
+          selector:
+            boolean:
 
     section_action_2:
       name: Action 2
@@ -64,6 +91,25 @@ blueprint:
           default: []
           selector:
             action:
+        action_2_icon:
+          name: Icon (SF Symbol)
+          description: >
+            SF Symbol name shown in the button.
+          default: ""
+          selector:
+            text:
+        action_2_repeatable:
+          name: Repeatable
+          description: Button resets after success for repeated taps.
+          default: false
+          selector:
+            boolean:
+        action_2_confirm:
+          name: Require Confirmation
+          description: Requires a second tap to execute.
+          default: false
+          selector:
+            boolean:
 
     section_action_3:
       name: Action 3
@@ -82,6 +128,25 @@ blueprint:
           default: []
           selector:
             action:
+        action_3_icon:
+          name: Icon (SF Symbol)
+          description: >
+            SF Symbol name shown in the button.
+          default: ""
+          selector:
+            text:
+        action_3_repeatable:
+          name: Repeatable
+          description: Button resets after success for repeated taps.
+          default: false
+          selector:
+            boolean:
+        action_3_confirm:
+          name: Require Confirmation
+          description: Requires a second tap to execute.
+          default: false
+          selector:
+            boolean:
 
     section_action_4:
       name: Action 4
@@ -100,6 +165,73 @@ blueprint:
           default: []
           selector:
             action:
+        action_4_icon:
+          name: Icon (SF Symbol)
+          description: >
+            SF Symbol name shown in the button.
+          default: ""
+          selector:
+            text:
+        action_4_repeatable:
+          name: Repeatable
+          description: Button resets after success for repeated taps.
+          default: false
+          selector:
+            boolean:
+        action_4_confirm:
+          name: Require Confirmation
+          description: Requires a second tap to execute.
+          default: false
+          selector:
+            boolean:
+
+    section_behavior:
+      name: Button Behavior
+      icon: mdi:gesture-tap
+      collapsed: true
+      input:
+        auto_dismiss:
+          name: Auto-Dismiss
+          description: >
+            Dismiss the notification automatically after any button tap
+            succeeds. When off (default), the notification stays visible
+            with a checkmark on the tapped button.
+          default: false
+          selector:
+            boolean:
+
+    section_state:
+      name: Entity State
+      icon: mdi:information-outline
+      collapsed: true
+      input:
+        show_state:
+          name: Show Entity State
+          description: >
+            Display the entity's current state below the message
+            (e.g. "Locked", "On · 75%"). Uses the entity_state
+            template below.
+          default: false
+          selector:
+            boolean:
+        entity_state:
+          name: Entity State Template
+          description: >
+            Jinja template for the state text shown below the message.
+            Only used when Show Entity State is enabled. Examples:
+            {{ states('lock.front_door') | title }},
+            {{ states('light.bedroom') }} · {{ state_attr('light.bedroom', 'brightness') | int / 255 * 100 | round }}%
+          default: ""
+          selector:
+            template:
+        subtitle:
+          name: Custom Subtitle
+          description: >
+            Manual subtitle text. Overrides the entity state template
+            if both are set. Leave empty to use the entity state.
+          default: ""
+          selector:
+            text:
 
     section_options:
       name: Options
@@ -239,12 +371,28 @@ sequence:
       bp_title: !input title
       bp_a1_title: !input action_1_title
       bp_a1: !input action_1
+      bp_a1_icon: !input action_1_icon
+      bp_a1_repeatable: !input action_1_repeatable
+      bp_a1_confirm: !input action_1_confirm
       bp_a2_title: !input action_2_title
       bp_a2: !input action_2
+      bp_a2_icon: !input action_2_icon
+      bp_a2_repeatable: !input action_2_repeatable
+      bp_a2_confirm: !input action_2_confirm
       bp_a3_title: !input action_3_title
       bp_a3: !input action_3
+      bp_a3_icon: !input action_3_icon
+      bp_a3_repeatable: !input action_3_repeatable
+      bp_a3_confirm: !input action_3_confirm
       bp_a4_title: !input action_4_title
       bp_a4: !input action_4
+      bp_a4_icon: !input action_4_icon
+      bp_a4_repeatable: !input action_4_repeatable
+      bp_a4_confirm: !input action_4_confirm
+      bp_auto_dismiss: !input auto_dismiss
+      bp_show_state: !input show_state
+      bp_entity_state: !input entity_state
+      bp_subtitle: !input subtitle
       bp_priority: !input priority
       bp_sound: !input sound
       bp_target_device: !input target
@@ -261,14 +409,20 @@ sequence:
       {%- endif -%}
       {%- if bp_tag %}{%- set d.items = d.items + [("tag", bp_tag)] -%}{%- endif -%}
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
+      {%- if bp_auto_dismiss %}{%- set d.items = d.items + [("auto_dismiss", true)] -%}{%- endif -%}
+      {%- if bp_subtitle %}{%- set d.items = d.items + [("subtitle", bp_subtitle)] -%}{%- endif -%}
+      {%- if bp_show_state and bp_entity_state -%}
+        {%- set rendered_state = bp_entity_state | string -%}
+        {%- if rendered_state %}{%- set d.items = d.items + [("entity_state", rendered_state), ("show_state", true)] -%}{%- endif -%}
+      {%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_a1_title, bp_a1),
-        (bp_a2_title, bp_a2),
-        (bp_a3_title, bp_a3),
-        (bp_a4_title, bp_a4),
+        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm),
+        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm),
+        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm),
+        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm),
       ] -%}
-      {%- for btn_label, steps in slots -%}
+      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm in slots -%}
         {%- if steps is sequence and steps | length > 0 -%}
           {%- set step = steps[0] -%}
           {%- set full_svc = step.action | default(step.service | default('')) -%}
@@ -289,6 +443,9 @@ sequence:
             {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
             {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
             {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
+            {%- if btn_icon %}{%- set a.items = a.items + [("icon", btn_icon)] -%}{%- endif -%}
+            {%- if btn_repeatable %}{%- set a.items = a.items + [("repeatable", true)] -%}{%- endif -%}
+            {%- if btn_confirm %}{%- set a.items = a.items + [("confirm", true)] -%}{%- endif -%}
             {%- set actions.list = actions.list + [dict(a.items)] -%}
           {%- endif -%}
         {%- endif -%}

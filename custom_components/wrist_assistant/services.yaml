@@ -71,17 +71,22 @@ send_notification:
       description: >-
         List of action buttons (1-4) shown on the notification. Each action
         has a title displayed on the button, and a domain/service to call
-        when tapped. Optional: entity_id, service_data, destructive styling.
+        when tapped. Optional per-action keys: entity_id, service_data,
+        destructive (ghost styling), repeatable (button resets after tap),
+        confirm (requires second tap), icon (SF Symbol name).
         Example: [{title: "Lock", domain: "lock", service: "lock",
-        entity_id: "lock.front_door"}, {title: "Ignore", destructive: true}]
+        entity_id: "lock.front_door", icon: "lock.fill", confirm: true},
+        {title: "Toggle Light", domain: "light", service: "toggle",
+        entity_id: "light.porch", icon: "lightbulb.fill", repeatable: true}]
       selector:
         object:
     data:
       name: Data
       description: >-
-        Additional data payload. Keys like entity_id, domain, service,
-        service_data, alarm_code, actions, tag, and group are passed
-        to the watch app.
+        Additional data payload. Notification-level keys: auto_dismiss
+        (dismiss after button tap), subtitle (custom text below message),
+        entity_state (entity state text below message), show_state (false
+        to hide entity_state). All keys are passed to the watch app.
       selector:
         object:
     sound:
