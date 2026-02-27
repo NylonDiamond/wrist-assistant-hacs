@@ -24,16 +24,6 @@ blueprint:
       description: Notification body text.
       selector:
         text:
-    subtitle:
-      name: Subtitle
-      description: >
-        Custom subtitle shown below the message in accent color.
-        Overrides any entity state text. Leave empty to use
-        the entity state from the action sections below.
-      default: ""
-      selector:
-        text:
-
     section_action_1:
       name: Action 1
       icon: mdi:gesture-tap-button
@@ -82,12 +72,13 @@ blueprint:
           default: false
           selector:
             boolean:
-        action_1_entity_state:
-          name: Entity State
+        action_1_subtitle:
+          name: Subtitle
           description: >
-            Jinja template for entity state shown below the notification
-            message (e.g. {{ states('lock.front_door') | title }}).
-            First non-empty entity state across all actions is used.
+            Text or Jinja template shown below the notification message
+            in accent color. Leave empty to auto-show the action's
+            target entity state (e.g. "Locked", "Open"). First
+            non-empty subtitle across all actions is used.
           default: ""
           selector:
             template:
@@ -127,10 +118,11 @@ blueprint:
           default: false
           selector:
             boolean:
-        action_2_entity_state:
-          name: Entity State
+        action_2_subtitle:
+          name: Subtitle
           description: >
-            Jinja template for entity state shown below the message.
+            Text or Jinja template for subtitle. Leave empty to
+            auto-show the action's target entity state.
           default: ""
           selector:
             template:
@@ -170,10 +162,11 @@ blueprint:
           default: false
           selector:
             boolean:
-        action_3_entity_state:
-          name: Entity State
+        action_3_subtitle:
+          name: Subtitle
           description: >
-            Jinja template for entity state shown below the message.
+            Text or Jinja template for subtitle. Leave empty to
+            auto-show the action's target entity state.
           default: ""
           selector:
             template:
@@ -213,10 +206,11 @@ blueprint:
           default: false
           selector:
             boolean:
-        action_4_entity_state:
-          name: Entity State
+        action_4_subtitle:
+          name: Subtitle
           description: >
-            Jinja template for entity state shown below the message.
+            Text or Jinja template for subtitle. Leave empty to
+            auto-show the action's target entity state.
           default: ""
           selector:
             template:
@@ -372,31 +366,30 @@ sequence:
   - variables:
       bp_message: !input message
       bp_title: !input title
-      bp_subtitle: !input subtitle
       bp_a1_title: !input action_1_title
       bp_a1: !input action_1
       bp_a1_icon: !input action_1_icon
       bp_a1_repeatable: !input action_1_repeatable
       bp_a1_confirm: !input action_1_confirm
-      bp_a1_entity_state: !input action_1_entity_state
+      bp_a1_subtitle: !input action_1_subtitle
       bp_a2_title: !input action_2_title
       bp_a2: !input action_2
       bp_a2_icon: !input action_2_icon
       bp_a2_repeatable: !input action_2_repeatable
       bp_a2_confirm: !input action_2_confirm
-      bp_a2_entity_state: !input action_2_entity_state
+      bp_a2_subtitle: !input action_2_subtitle
       bp_a3_title: !input action_3_title
       bp_a3: !input action_3
       bp_a3_icon: !input action_3_icon
       bp_a3_repeatable: !input action_3_repeatable
       bp_a3_confirm: !input action_3_confirm
-      bp_a3_entity_state: !input action_3_entity_state
+      bp_a3_subtitle: !input action_3_subtitle
       bp_a4_title: !input action_4_title
       bp_a4: !input action_4
       bp_a4_icon: !input action_4_icon
       bp_a4_repeatable: !input action_4_repeatable
       bp_a4_confirm: !input action_4_confirm
-      bp_a4_entity_state: !input action_4_entity_state
+      bp_a4_subtitle: !input action_4_subtitle
       bp_auto_dismiss: !input auto_dismiss
       bp_priority: !input priority
       bp_sound: !input sound
@@ -416,26 +409,15 @@ sequence:
       {%- if bp_group %}{%- set d.items = d.items + [("group", bp_group)] -%}{%- endif -%}
       {%- set extra = namespace(items=[]) -%}
       {%- if bp_auto_dismiss %}{%- set extra.items = extra.items + [("auto_dismiss", true)] -%}{%- endif -%}
-      {%- if bp_subtitle -%}
-        {%- set extra.items = extra.items + [("subtitle", bp_subtitle)] -%}
-      {%- else -%}
-        {%- set state_candidates = [bp_a1_entity_state, bp_a2_entity_state, bp_a3_entity_state, bp_a4_entity_state] -%}
-        {%- for candidate in state_candidates -%}
-          {%- set rendered = candidate | string | trim -%}
-          {%- if rendered -%}
-            {%- set extra.items = extra.items + [("entity_state", rendered)] -%}
-            {%- break -%}
-          {%- endif -%}
-        {%- endfor -%}
-      {%- endif -%}
       {%- set actions = namespace(list=[]) -%}
       {%- set slots = [
-        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm),
-        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm),
-        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm),
-        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm),
+        (bp_a1_title, bp_a1, bp_a1_icon, bp_a1_repeatable, bp_a1_confirm, bp_a1_subtitle),
+        (bp_a2_title, bp_a2, bp_a2_icon, bp_a2_repeatable, bp_a2_confirm, bp_a2_subtitle),
+        (bp_a3_title, bp_a3, bp_a3_icon, bp_a3_repeatable, bp_a3_confirm, bp_a3_subtitle),
+        (bp_a4_title, bp_a4, bp_a4_icon, bp_a4_repeatable, bp_a4_confirm, bp_a4_subtitle),
       ] -%}
-      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm in slots -%}
+      {%- set subtitle = namespace(value='') -%}
+      {%- for btn_label, steps, btn_icon, btn_repeatable, btn_confirm, btn_sub in slots -%}
         {%- if steps is sequence and steps | length > 0 -%}
           {%- set step = steps[0] -%}
           {%- set full_svc = step.action | default(step.service | default('')) -%}
@@ -453,6 +435,16 @@ sequence:
                 {%- set eid = step.target.entity_id[0] -%}
               {%- endif -%}
             {%- endif -%}
+            {%- if not subtitle.value -%}
+              {%- if btn_sub | string | trim -%}
+                {%- set subtitle.value = btn_sub | string | trim -%}
+              {%- elif eid -%}
+                {%- set auto_state = states(eid) | default('', true) | title -%}
+                {%- if auto_state and auto_state not in ['Unavailable', 'Unknown'] -%}
+                  {%- set subtitle.value = auto_state -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endif -%}
             {%- set a = namespace(items=[("title", btn_title), ("domain", domain), ("service", svc)]) -%}
             {%- if eid %}{%- set a.items = a.items + [("entity_id", eid)] -%}{%- endif -%}
             {%- if svc_data %}{%- set a.items = a.items + [("service_data", svc_data)] -%}{%- endif -%}
@@ -463,6 +455,7 @@ sequence:
           {%- endif -%}
         {%- endif -%}
       {%- endfor -%}
+      {%- if subtitle.value %}{%- set extra.items = extra.items + [("entity_state", subtitle.value)] -%}{%- endif -%}
       {%- if actions.list %}{%- set d.items = d.items + [("actions", actions.list)] -%}{%- endif -%}
       {%- if extra.items %}{%- set d.items = d.items + [("data", dict(extra.items))] -%}{%- endif -%}
       {{ dict(d.items) }}
