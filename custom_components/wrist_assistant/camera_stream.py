@@ -63,6 +63,7 @@ class CameraStreamCoordinator:
     def __init__(self) -> None:
         self._sessions: dict[tuple[str, str], StreamSession] = {}
         self._device_groups: list[dict] | None = None  # cached camera device groups
+        self._device_groups_ts: float = 0  # monotonic timestamp of last build
 
     def get_or_create_session(
         self,
@@ -117,6 +118,8 @@ class CameraStreamCoordinator:
             session.fps = _clamp(fps, MIN_FPS, MAX_FPS)
         return True
 
+    _DEVICE_GROUPS_TTL = 300  # seconds — refresh every 5 minutes
+
     def resolve_quality_level(
         self,
         hass: "HomeAssistant",
@@ -125,13 +128,17 @@ class CameraStreamCoordinator:
     ) -> str | None:
         """Resolve quality_level ('sd' or 'hd') to the correct entity_id for this device.
 
-        Caches device groups and invalidates on each call (lightweight since it's
-        just registry lookups). Returns the resolved entity_id, or None if no mapping found.
+        Caches device groups with a 5-minute TTL (registry lookups are cheap but
+        no need to redo them on every frame). Returns the resolved entity_id,
+        or None if no mapping found.
         """
+        import time
         from .camera_devices import build_camera_device_groups
 
-        if self._device_groups is None:
+        now = time.monotonic()
+        if self._device_groups is None or (now - self._device_groups_ts) > self._DEVICE_GROUPS_TTL:
             self._device_groups = build_camera_device_groups(hass)
+            self._device_groups_ts = now
 
         role_key = "hd_stream" if quality_level == "hd" else "sd_stream"
 
@@ -144,6 +151,7 @@ class CameraStreamCoordinator:
     def invalidate_device_groups(self) -> None:
         """Clear cached device groups (e.g. when entities change)."""
         self._device_groups = None
+        self._device_groups_ts = 0
 
     def remove_session(self, watch_id: str, entity_id: str) -> None:
         """Remove a session on disconnect."""
@@ -153,6 +161,7 @@ class CameraStreamCoordinator:
         """Clear all sessions."""
         self._sessions.clear()
         self._device_groups = None
+        self._device_groups_ts = 0
 
 
 def _process_frame(
