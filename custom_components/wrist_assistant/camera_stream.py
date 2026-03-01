@@ -41,6 +41,9 @@ class ViewportState:
     h: float = 1.0
 
 
+_UNSET = object()  # sentinel so None can explicitly clear source_entity_id
+
+
 @dataclass(slots=True)
 class StreamSession:
     """Active stream session keyed by (watch_id, entity_id)."""
@@ -49,6 +52,7 @@ class StreamSession:
     width: int = DEFAULT_WIDTH
     quality: int = DEFAULT_QUALITY
     fps: float = DEFAULT_FPS
+    source_entity_id: str | None = None  # overrides which entity frames come from
 
 
 class CameraStreamCoordinator:
@@ -89,6 +93,9 @@ class CameraStreamCoordinator:
         entity_id: str,
         viewport: ViewportState | None = None,
         width: int | None = None,
+        source_entity_id: object = _UNSET,
+        quality: int | None = None,
+        fps: float | None = None,
     ) -> bool:
         """Update params for an active session. Returns True if session exists."""
         key = (watch_id, entity_id)
@@ -99,6 +106,12 @@ class CameraStreamCoordinator:
             session.viewport = viewport
         if width is not None:
             session.width = int(_clamp(width, MIN_WIDTH, MAX_WIDTH))
+        if source_entity_id is not _UNSET:
+            session.source_entity_id = source_entity_id
+        if quality is not None:
+            session.quality = int(_clamp(quality, MIN_QUALITY, MAX_QUALITY))
+        if fps is not None:
+            session.fps = _clamp(fps, MIN_FPS, MAX_FPS)
         return True
 
     def remove_session(self, watch_id: str, entity_id: str) -> None:
@@ -203,19 +216,21 @@ class CameraStreamView(HomeAssistantView):
         )
         await response.prepare(request)
 
-        frame_interval = 1.0 / fps
+        consecutive_source_errors = 0
 
         try:
             while True:
-                # Read current viewport from session (may be updated by POST endpoint)
+                # Read current params from session (may be updated by POST endpoint)
                 current_viewport = session.viewport
                 current_width = session.width
                 current_quality = session.quality
+                fetch_entity = session.source_entity_id or entity_id
+                frame_interval = 1.0 / session.fps
 
                 try:
                     # Get frame from HA camera platform
                     image: CameraImage = await async_get_image(
-                        self._hass, entity_id, timeout=5
+                        self._hass, fetch_entity, timeout=5
                     )
                     if image is None or image.content is None:
                         await asyncio.sleep(frame_interval)
@@ -237,13 +252,27 @@ class CameraStreamView(HomeAssistantView):
                         b"Content-Length: " + str(len(processed)).encode() + b"\r\n"
                         b"\r\n" + processed + b"\r\n"
                     )
+                    consecutive_source_errors = 0
 
                 except (ConnectionResetError, ConnectionAbortedError):
                     break
                 except HomeAssistantError:
                     _LOGGER.debug("Camera unavailable for %s, retrying", entity_id)
+                    if fetch_entity != entity_id:
+                        consecutive_source_errors += 1
                 except Exception:  # noqa: BLE001
                     _LOGGER.debug("Frame error for %s, continuing", entity_id)
+                    if fetch_entity != entity_id:
+                        consecutive_source_errors += 1
+
+                # Auto-revert source override after repeated failures
+                if consecutive_source_errors >= 5 and session.source_entity_id is not None:
+                    _LOGGER.warning(
+                        "Reverted source_entity_id for %s after %d failures (was %s)",
+                        entity_id, consecutive_source_errors, session.source_entity_id,
+                    )
+                    session.source_entity_id = None
+                    consecutive_source_errors = 0
 
                 await asyncio.sleep(frame_interval)
         except asyncio.CancelledError:
@@ -301,7 +330,43 @@ class CameraViewportView(HomeAssistantView):
         if "width" in payload:
             width = int(float(payload["width"]))
 
-        if coordinator.update_session(watch_id, entity_id, viewport=viewport, width=width):
+        # Optional source_entity_id override
+        source_entity_id = _UNSET
+        if "source_entity_id" in payload:
+            sid = payload["source_entity_id"]
+            if sid is None:
+                source_entity_id = None  # clear back to original
+            elif isinstance(sid, str) and sid.startswith("camera."):
+                state = self._hass.states.get(sid)
+                if state is None:
+                    return self.json_message(
+                        f"Entity {sid} not found", status_code=404
+                    )
+                source_entity_id = sid
+            else:
+                return self.json_message(
+                    "source_entity_id must start with camera.", status_code=400
+                )
+
+        # Optional quality
+        quality = None
+        if "quality" in payload:
+            quality = int(float(payload["quality"]))
+
+        # Optional fps
+        fps = None
+        if "fps" in payload:
+            fps = float(payload["fps"])
+
+        if coordinator.update_session(
+            watch_id,
+            entity_id,
+            viewport=viewport,
+            width=width,
+            source_entity_id=source_entity_id,
+            quality=quality,
+            fps=fps,
+        ):
             return self.json({"status": "ok"})
         return self.json_message("No active stream for this session", status_code=404)
 
