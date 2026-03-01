@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 
 from .api import MAX_EVENTS_BUFFER
 from .const import (
+    DATA_APNS_CONFIG_STORE,
     DATA_APNS_CLIENT,
     DATA_COORDINATOR,
     DATA_NOTIFICATION_TOKEN_STORE,
@@ -59,5 +60,9 @@ async def async_get_config_entry_diagnostics(
             "token_count": len(notification_tokens),
             "tokens": notification_tokens,
             "apns_configured": DATA_APNS_CLIENT in data,
+            "apns_config_managed": bool(
+                data.get(DATA_APNS_CONFIG_STORE)
+                and data[DATA_APNS_CONFIG_STORE].is_configured
+            ),
         },
     }

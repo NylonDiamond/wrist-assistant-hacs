@@ -48,6 +48,7 @@ Wrist Assistant gives you automatic, real-time two-way sync between Apple Watch 
 ### `wrist_assistant.send_notification`
 
 Send push notifications directly to paired Apple Watches via APNs. Watches register their push tokens automatically during pairing — no extra setup needed.
+APNs credentials are managed automatically and persisted by the integration (no manual APNs setup required).
 
 **Basic notification:**
 
@@ -68,16 +69,18 @@ data:
   target: "my-watch-id"
 ```
 
-**Actionable notification (entity toggle):**
+**Actionable notification (button executes a service):**
 
 ```yaml
 service: wrist_assistant.send_notification
 data:
   title: "Living Room"
   message: "Lights are still on"
-  category: "ENTITY_TOGGLE"
-  data:
-    entity_id: "light.living_room"
+  actions:
+    - title: "Turn Off"
+      domain: "light"
+      service: "turn_off"
+      entity_id: "light.living_room"
 ```
 
 **Grouped notifications (same thread in notification center):**
@@ -99,9 +102,11 @@ data:
   title: "Garage"
   message: "Garage door open for 10 minutes"
   tag: "garage_status"
-  category: "CLOSE_CONTROL"
-  data:
-    entity_id: "cover.garage_door"
+  actions:
+    - title: "Close"
+      domain: "cover"
+      service: "close_cover"
+      entity_id: "cover.garage_door"
 ```
 
 **Time-sensitive alert (breaks through Focus/DND):**
@@ -113,9 +118,12 @@ data:
   message: "Motion detected while armed away"
   priority: "time-sensitive"
   sound: "default"
-  category: "ALARM_CONTROL"
-  data:
-    entity_id: "alarm_control_panel.home"
+  actions:
+    - title: "Disarm"
+      domain: "alarm_control_panel"
+      service: "alarm_disarm"
+      entity_id: "alarm_control_panel.home"
+      confirm: true
 ```
 
 **Silent background update:**
@@ -132,7 +140,7 @@ data:
 | `message` | Yes | Notification body text |
 | `title` | No | Notification title |
 | `target` | No | Watch ID — omit to send to all watches |
-| `category` | No | `ENTITY_TOGGLE`, `ENTITY_TURN_ON`, `ENTITY_TURN_OFF`, `OPEN_CONTROL`, `CLOSE_CONTROL`, `LOCK_CONTROL`, `UNLOCK_CONTROL`, `ALARM_CONTROL`, `CONFIRM_ACTION`, `SCENE_ACTIVATE`, or `HA_CUSTOM` |
+| `actions` | No | 1-4 button actions. Each action supports `title`, `domain`, `service`, optional `entity_id`, `service_data`, `confirm`, `repeatable`, `destructive`, `icon`, and subtitle fields |
 | `data` | No | Extra payload (e.g. `entity_id`, `domain`, `service`, `actions`) |
 | `sound` | No | `"default"` for system sound, omit for silent |
 | `push_type` | No | `"alert"` (default) or `"background"` for silent updates |
@@ -148,8 +156,11 @@ Fired on the Home Assistant event bus when a notification action is executed on 
 
 | Field | Description |
 |-------|-------------|
-| `action` | The action identifier (e.g. `TOGGLE_ENTITY`, `TURN_ON_ENTITY`) |
-| `entity_id` | The entity the action targeted (empty string if none) |
+| `action` | The action title from the tapped watch button |
+| `action_index` | Zero-based index of the tapped action |
+| `domain` | Home Assistant service domain executed |
+| `service` | Home Assistant service executed |
+| `entity_id` | Resolved target entity ID (empty when not provided) |
 | `success` | `true` if the action succeeded, `false` on failure |
 | `error` | Error message on failure, absent on success |
 | `source` | Always `"watch_notification"` |

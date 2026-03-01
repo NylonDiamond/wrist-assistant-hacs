@@ -8,8 +8,6 @@ from pathlib import Path
 
 from aioapns import APNs, NotificationRequest, PushType
 
-from .const import APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC
-
 _LOGGER = logging.getLogger(__name__)
 
 # Bundled .p8 key lives alongside this file
@@ -32,10 +30,23 @@ class APNsClient:
     an active asyncio event loop.
     """
 
-    def __init__(self, key_content: str, ssl_context: ssl.SSLContext | None = None) -> None:
-        if not APNS_KEY_ID or not APNS_TEAM_ID:
-            raise ValueError("APNS_KEY_ID and APNS_TEAM_ID must be set in const.py")
+    def __init__(
+        self,
+        key_content: str,
+        *,
+        key_id: str,
+        team_id: str,
+        topic: str,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> None:
+        if not key_id or not team_id:
+            raise ValueError("APNs key_id and team_id are required")
+        if not topic:
+            raise ValueError("APNs topic is required")
         self._key_content = key_content
+        self._key_id = key_id
+        self._team_id = team_id
+        self._topic = topic
         self._ssl_context = ssl_context
         self._production: APNs | None = None
         self._sandbox: APNs | None = None
@@ -47,9 +58,9 @@ class APNsClient:
             if self._sandbox is None:
                 self._sandbox = APNs(
                     key=self._key_content,
-                    key_id=APNS_KEY_ID,
-                    team_id=APNS_TEAM_ID,
-                    topic=APNS_TOPIC,
+                    key_id=self._key_id,
+                    team_id=self._team_id,
+                    topic=self._topic,
                     use_sandbox=True,
                     **ssl_kwargs,
                 )
@@ -57,9 +68,9 @@ class APNsClient:
         if self._production is None:
             self._production = APNs(
                 key=self._key_content,
-                key_id=APNS_KEY_ID,
-                team_id=APNS_TEAM_ID,
-                topic=APNS_TOPIC,
+                key_id=self._key_id,
+                team_id=self._team_id,
+                topic=self._topic,
                 use_sandbox=False,
                 **ssl_kwargs,
             )

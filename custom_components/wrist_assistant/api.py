@@ -77,24 +77,27 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "friendly_name", "brightness", "color_temp", "color_temp_kelvin",
         "rgb_color", "hs_color", "xy_color", "color_mode", "supported_color_modes",
         "min_mireds", "max_mireds", "min_color_temp_kelvin", "max_color_temp_kelvin",
-        "effect", "effect_list", "icon", "entity_picture",
+        "effect", "effect_list", "supported_features", "rgbw_color",
+        "icon", "entity_picture",
     },
     "switch": {
         "friendly_name", "device_class", "icon", "entity_picture",
     },
     "cover": {
         "friendly_name", "device_class", "current_position", "current_tilt_position",
-        "icon", "entity_picture",
+        "supported_features", "icon", "entity_picture",
     },
     "climate": {
         "friendly_name", "hvac_modes", "hvac_action", "current_temperature",
         "temperature", "target_temp_high", "target_temp_low", "fan_mode", "fan_modes",
-        "preset_mode", "preset_modes", "humidity", "current_humidity",
+        "preset_mode", "preset_modes", "humidity", "current_humidity", "target_temp_step",
+        "supported_features",
         "min_temp", "max_temp", "icon", "entity_picture",
     },
     "fan": {
         "friendly_name", "percentage", "preset_mode", "preset_modes",
-        "oscillating", "direction", "percentage_step", "icon", "entity_picture",
+        "oscillating", "direction", "percentage_step", "supported_features",
+        "icon", "entity_picture",
     },
     "lock": {
         "friendly_name", "icon", "entity_picture",
@@ -102,8 +105,10 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     "media_player": {
         "friendly_name", "media_title", "media_artist", "media_album_name",
         "media_content_type", "media_duration", "media_position",
+        "media_position_updated_at", "app_name", "group_members",
         "volume_level", "is_volume_muted", "source", "source_list",
-        "sound_mode", "sound_mode_list", "entity_picture",
+        "sound_mode", "sound_mode_list", "shuffle", "repeat",
+        "supported_features", "entity_picture",
         "icon", "device_class",
     },
     "camera": {
@@ -114,14 +119,15 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
     },
     "sensor": {
         "friendly_name", "device_class", "unit_of_measurement", "state_class",
-        "icon", "entity_picture",
+        "supported_features", "icon", "entity_picture",
     },
     "person": {
         "friendly_name", "entity_picture", "gps_accuracy", "latitude", "longitude",
         "source", "icon",
     },
     "alarm_control_panel": {
-        "friendly_name", "code_arm_required", "supported_features", "icon",
+        "friendly_name", "code_arm_required", "code_format", "changed_by",
+        "supported_features", "icon",
         "entity_picture",
     },
     "vacuum": {
@@ -152,7 +158,7 @@ _SLIM_ATTRIBUTES: dict[str, set[str]] = {
         "friendly_name", "icon", "entity_picture",
     },
     "automation": {
-        "friendly_name", "last_triggered", "icon", "entity_picture",
+        "friendly_name", "last_triggered", "mode", "icon", "entity_picture",
     },
     "timer": {
         "friendly_name", "duration", "remaining", "finishes_at", "icon",
@@ -245,6 +251,7 @@ class DeltaCoordinator:
         battery_threshold: int = 20,
         summary_entities: dict[str, list[str]] | None = None,
         slim: bool = False,
+        include_summary: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request."""
         self._prune_sessions()
@@ -279,6 +286,7 @@ class DeltaCoordinator:
                 resync_required=False,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         # When since is nil, the client is requesting a full state snapshot.
@@ -292,6 +300,7 @@ class DeltaCoordinator:
                 resync_required=False,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         since_cursor, invalid_since = self._parse_since(
@@ -305,6 +314,7 @@ class DeltaCoordinator:
                 resync_required=True,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         if self._is_stale_cursor(since_cursor):
@@ -315,6 +325,7 @@ class DeltaCoordinator:
                 resync_required=True,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         events, next_cursor = self._collect_events(
@@ -332,6 +343,7 @@ class DeltaCoordinator:
                 include_details=force_delta,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         # Force delta: skip long-poll wait, return immediately with detailed info_summary
@@ -344,6 +356,7 @@ class DeltaCoordinator:
                 include_details=True,
                 battery_threshold=battery_threshold,
                 summary_entities=summary_entities,
+                include_summary=include_summary,
             )
 
         deadline = self.hass.loop.time() + timeout
@@ -370,6 +383,7 @@ class DeltaCoordinator:
                             resync_required=False,
                             battery_threshold=battery_threshold,
                             summary_entities=summary_entities,
+                            include_summary=include_summary,
                         )
                     since_cursor = next_cursor
                     continue
@@ -396,6 +410,7 @@ class DeltaCoordinator:
                         resync_required=False,
                         battery_threshold=battery_threshold,
                         summary_entities=summary_entities,
+                        include_summary=include_summary,
                     )
                 since_cursor = next_cursor
         except asyncio.CancelledError:
@@ -532,6 +547,7 @@ class DeltaCoordinator:
         need_entities: bool,
         resync_required: bool,
         include_details: bool = False,
+        include_summary: bool = False,
         battery_threshold: int = 20,
         summary_entities: dict[str, list[str]] | None = None,
     ) -> dict[str, Any]:
@@ -542,11 +558,12 @@ class DeltaCoordinator:
             "resync_required": resync_required,
             "capabilities": sorted(self._capabilities),
         }
-        payload["info_summary"] = self._compute_info_summary(
-            include_details=include_details,
-            battery_threshold=battery_threshold,
-            summary_entities=summary_entities,
-        )
+        if include_summary or include_details:
+            payload["info_summary"] = self._compute_info_summary(
+                include_details=include_details,
+                battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
+            )
         return payload
 
     def _compute_info_summary(self, *, include_details: bool = False, battery_threshold: int = 20, summary_entities: dict[str, list[str]] | None = None) -> dict[str, Any]:
@@ -1008,6 +1025,7 @@ class WatchUpdatesView(HomeAssistantView):
 
         force_delta = payload.get("force_delta", False) is True
         slim = payload.get("slim", False) is True
+        include_summary = payload.get("include_summary", False) is True
         raw_threshold = payload.get("battery_threshold", 20)
         battery_threshold = max(5, min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20))
 
@@ -1045,6 +1063,7 @@ class WatchUpdatesView(HomeAssistantView):
             battery_threshold=battery_threshold,
             summary_entities=summary_entities,
             slim=slim,
+            include_summary=include_summary or force_delta or summary_entities is not None,
         )
 
         if status == 204:
@@ -1070,6 +1089,73 @@ class WatchUpdatesView(HomeAssistantView):
             status=status,
             content_type="application/json",
         )
+
+
+class WatchSummaryView(HomeAssistantView):
+    """Authenticated endpoint for on-demand info summary snapshots."""
+
+    url = "/api/wrist_assistant/summary"
+    name = "api:wrist_assistant_summary"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def post(self, request: Request) -> Response:
+        """Return an info summary without touching delta sessions."""
+        from .const import DATA_COORDINATOR, DOMAIN
+
+        coordinator = self._hass.data.get(DOMAIN, {}).get(DATA_COORDINATOR)
+        if coordinator is None:
+            return self.json_message("Integration not loaded", status_code=503)
+
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            payload = {}
+
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object body", status_code=400)
+
+        include_details = payload.get("include_details", True) is True
+        raw_threshold = payload.get("battery_threshold", 20)
+        battery_threshold = max(
+            5,
+            min(95, int(raw_threshold) if isinstance(raw_threshold, (int, float)) else 20),
+        )
+
+        raw_summary_entities = payload.get("summary_entities")
+        summary_entities: dict[str, list[str]] | None = None
+        if isinstance(raw_summary_entities, dict):
+            summary_entities = {}
+            for domain, ids in raw_summary_entities.items():
+                if isinstance(domain, str) and isinstance(ids, list):
+                    summary_entities[domain] = [
+                        eid for eid in ids if isinstance(eid, str) and eid
+                    ]
+
+        body = {
+            "info_summary": coordinator._compute_info_summary(
+                include_details=include_details,
+                battery_threshold=battery_threshold,
+                summary_entities=summary_entities,
+            ),
+            "capabilities": sorted(coordinator._capabilities),
+        }
+
+        json_bytes = _json.dumps(body, separators=(",", ":")).encode("utf-8")
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_encoding:
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            return Response(
+                body=compressed,
+                status=200,
+                content_type="application/json",
+                headers={"Content-Encoding": "gzip"},
+            )
+        return Response(body=json_bytes, status=200, content_type="application/json")
 
 
 class PairingRedeemView(HomeAssistantView):
@@ -1132,5 +1218,3 @@ class PairingRedeemView(HomeAssistantView):
             return self.json_message("Invalid or expired pairing code", status_code=400)
         _LOGGER.info("Pairing redeem success code=%s", code_hint)
         return self.json(token_payload, status_code=200)
-
-

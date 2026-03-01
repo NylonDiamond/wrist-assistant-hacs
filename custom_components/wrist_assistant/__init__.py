@@ -28,8 +28,10 @@ from .api import (
     DeltaCoordinator,
     PairingCoordinator,
     PairingRedeemView,
+    WatchSummaryView,
     WatchUpdatesView,
 )
+from .apns_config import APNsConfig, APNsConfigStore, APNsConfigView
 from .apns_client import APNsClient
 from .camera_stream import (
     CameraBatchView,
@@ -38,6 +40,7 @@ from .camera_stream import (
     CameraViewportView,
 )
 from .const import (
+    DATA_APNS_CONFIG_STORE,
     DATA_APNS_CLIENT,
     DATA_CAMERA_STREAM_COORDINATOR,
     DATA_COORDINATOR,
@@ -55,6 +58,9 @@ from .notifications import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_BUNDLED_APNS_KEY_ID = "XZ9WA28KN3"
+_BUNDLED_APNS_TEAM_ID = "8265CSQJ66"
+_BUNDLED_APNS_TOPIC = "com.nylondiamond.wristassistant.watchkitapp"
 
 # Unique ID suffixes from removed entity classes (cleanup on upgrade)
 _ORPHANED_SUFFIXES = ("_entity_list", "_refresh_pairing_qr", "_pairing_qr", "_connection_qr")
@@ -122,7 +128,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     pairing_coordinator = PairingCoordinator(hass)
     camera_stream_coordinator = CameraStreamCoordinator()
     notification_store = NotificationTokenStore(hass)
+    apns_config_store = APNsConfigStore(hass)
     await notification_store.async_load()
+    await apns_config_store.async_load()
 
     # Register server capabilities
     coordinator.register_capability("gzip")
@@ -135,18 +143,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][DATA_PAIRING_COORDINATOR] = pairing_coordinator
     hass.data[DOMAIN][DATA_CAMERA_STREAM_COORDINATOR] = camera_stream_coordinator
     hass.data[DOMAIN][DATA_NOTIFICATION_TOKEN_STORE] = notification_store
+    hass.data[DOMAIN][DATA_APNS_CONFIG_STORE] = apns_config_store
     hass.http.register_view(WatchUpdatesView(hass))
+    hass.http.register_view(WatchSummaryView(hass))
     hass.http.register_view(PairingRedeemView(hass))
     hass.http.register_view(CameraStreamView(hass))
     hass.http.register_view(CameraViewportView(hass))
     hass.http.register_view(CameraBatchView(hass))
     hass.http.register_view(NotificationRegisterView(hass))
 
-    # APNs client – read key in executor to avoid blocking the event loop.
-    apns_client = await _create_apns_client(hass)
-    if apns_client:
+    async def _reload_apns_client() -> None:
+        apns_client = await _create_apns_client(hass, apns_config_store)
+        if apns_client is None:
+            hass.data[DOMAIN].pop(DATA_APNS_CLIENT, None)
+            _LOGGER.warning("APNs client unavailable")
+            return
         hass.data[DOMAIN][DATA_APNS_CLIENT] = apns_client
         _LOGGER.info("APNs client ready")
+
+    hass.http.register_view(APNsConfigView(apns_config_store, _reload_apns_client))
+
+    # APNs client – read credentials in executor to avoid blocking the event loop.
+    await _reload_apns_client()
 
     # Revoke orphaned pairing refresh tokens from previous runs that were
     # never redeemed (e.g., HA crashed or was killed before shutdown cleanup).
@@ -315,6 +333,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data[DATA_CAMERA_STREAM_COORDINATOR].shutdown()
             data.pop(DATA_CAMERA_STREAM_COORDINATOR, None)
         data.pop(DATA_NOTIFICATION_TOKEN_STORE, None)
+        data.pop(DATA_APNS_CONFIG_STORE, None)
         data.pop(DATA_APNS_CLIENT, None)
         persistent_notification.async_dismiss(
             hass, _PAIRING_NOTIFICATION_ID_TEMPLATE % entry.entry_id
@@ -332,20 +351,59 @@ async def async_remove_config_entry_device(
     return True
 
 
-async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:
-    """Create APNs client, reading the bundled key off the event loop."""
-    import ssl
+async def _bootstrap_apns_config_if_needed(
+    hass: HomeAssistant, store: APNsConfigStore
+) -> None:
+    """Seed APNs config from bundled credentials for zero-touch setup."""
+    if store.is_configured:
+        return
 
     from .apns_client import _BUNDLED_KEY_PATH  # noqa: WPS433
 
-    def _blocking_init() -> tuple[str, ssl.SSLContext]:
-        key_content = _BUNDLED_KEY_PATH.read_text()
-        ctx = ssl.create_default_context()
-        return key_content, ctx
+    def _read_bundled_key() -> str:
+        if not _BUNDLED_KEY_PATH.exists():
+            return ""
+        return _BUNDLED_KEY_PATH.read_text()
+
+    key_content = await hass.async_add_executor_job(_read_bundled_key)
+    if not key_content.strip():
+        return
+
+    await store.async_save(
+        APNsConfig(
+            key_id=_BUNDLED_APNS_KEY_ID,
+            team_id=_BUNDLED_APNS_TEAM_ID,
+            topic=_BUNDLED_APNS_TOPIC,
+            private_key=key_content,
+        )
+    )
+    _LOGGER.info("Bootstrapped APNs credentials into managed storage")
+
+
+async def _create_apns_client(
+    hass: HomeAssistant, store: APNsConfigStore
+) -> APNsClient | None:
+    """Create APNs client from managed credential storage."""
+    import ssl
+
+    await _bootstrap_apns_config_if_needed(hass, store)
+    config = store.config
+    if config is None:
+        _LOGGER.warning("No APNs credentials configured")
+        return None
+
+    def _blocking_init() -> ssl.SSLContext:
+        return ssl.create_default_context()
 
     try:
-        key_content, ssl_context = await hass.async_add_executor_job(_blocking_init)
-        return APNsClient(key_content, ssl_context=ssl_context)
+        ssl_context = await hass.async_add_executor_job(_blocking_init)
+        return APNsClient(
+            config.private_key,
+            key_id=config.key_id,
+            team_id=config.team_id,
+            topic=config.topic,
+            ssl_context=ssl_context,
+        )
     except Exception:
         _LOGGER.exception("Failed to create APNs client")
         return None
