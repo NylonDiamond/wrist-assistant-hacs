@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Limits
 MIN_WIDTH = 50
-MAX_WIDTH = 2000
+MAX_WIDTH = 4000
 MIN_QUALITY = 10
 MAX_QUALITY = 95
 MIN_FPS = 0.5
@@ -53,6 +53,8 @@ class StreamSession:
     quality: int = DEFAULT_QUALITY
     fps: float = DEFAULT_FPS
     source_entity_id: str | None = None  # overrides which entity frames come from
+    source_width: int = 0   # native resolution of the source camera (set on first frame)
+    source_height: int = 0
 
 
 class CameraStreamCoordinator:
@@ -128,9 +130,13 @@ def _process_frame(
     viewport: ViewportState,
     width: int,
     quality: int,
-) -> bytes:
-    """Crop, resize, and recompress a camera frame (runs in executor)."""
+) -> tuple[bytes, int, int]:
+    """Crop, resize, and recompress a camera frame (runs in executor).
+
+    Returns (processed_bytes, source_width, source_height).
+    """
     img = Image.open(BytesIO(frame_bytes))
+    source_w, source_h = img.size
 
     # Crop if viewport is not full-frame
     if not (viewport.x <= 0.001 and viewport.y <= 0.001 and viewport.w >= 0.999 and viewport.h >= 0.999):
@@ -156,7 +162,7 @@ def _process_frame(
     # Recompress as JPEG
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)
-    return buf.getvalue()
+    return buf.getvalue(), source_w, source_h
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -237,13 +243,18 @@ class CameraStreamView(HomeAssistantView):
                         continue
 
                     # Process frame in executor (PIL is sync/CPU-bound)
-                    processed = await self._hass.async_add_executor_job(
+                    processed, src_w, src_h = await self._hass.async_add_executor_job(
                         _process_frame,
                         image.content,
                         current_viewport,
                         current_width,
                         current_quality,
                     )
+
+                    # Capture source resolution (updates on source switch)
+                    if src_w > 0 and src_h > 0:
+                        session.source_width = src_w
+                        session.source_height = src_h
 
                     # Write MJPEG frame
                     await response.write(
@@ -367,7 +378,14 @@ class CameraViewportView(HomeAssistantView):
             quality=quality,
             fps=fps,
         ):
-            return self.json({"status": "ok"})
+            # Return source resolution if known (captured from frames)
+            key = (watch_id, entity_id)
+            session = coordinator._sessions.get(key)
+            result: dict = {"status": "ok"}
+            if session and session.source_width > 0:
+                result["source_width"] = session.source_width
+                result["source_height"] = session.source_height
+            return self.json(result)
         return self.json_message("No active stream for this session", status_code=404)
 
 
@@ -412,7 +430,7 @@ class CameraBatchView(HomeAssistantView):
                 if image is None or image.content is None:
                     return {"entity_id": entity_id, "data": None, "size": 0}
 
-                processed = await self._hass.async_add_executor_job(
+                processed, _, _ = await self._hass.async_add_executor_job(
                     _process_frame,
                     image.content,
                     ViewportState(),  # Full frame
