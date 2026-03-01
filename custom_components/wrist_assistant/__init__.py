@@ -33,6 +33,7 @@ from .api import (
 )
 from .apns_config import APNsConfig, APNsConfigStore, APNsConfigView
 from .apns_client import APNsClient
+from .camera_devices import CameraDevicesView
 from .camera_stream import (
     CameraBatchView,
     CameraStreamCoordinator,
@@ -136,6 +137,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")
+    coordinator.register_capability("camera_devices")
     coordinator.register_capability("push_notifications")
 
     hass.data.setdefault(DOMAIN, {})
@@ -150,6 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(CameraStreamView(hass))
     hass.http.register_view(CameraViewportView(hass))
     hass.http.register_view(CameraBatchView(hass))
+    hass.http.register_view(CameraDevicesView(hass))
     hass.http.register_view(NotificationRegisterView(hass))
 
     async def _reload_apns_client() -> None:

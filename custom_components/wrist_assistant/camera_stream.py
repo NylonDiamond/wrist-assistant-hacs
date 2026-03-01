@@ -62,6 +62,7 @@ class CameraStreamCoordinator:
 
     def __init__(self) -> None:
         self._sessions: dict[tuple[str, str], StreamSession] = {}
+        self._device_groups: list[dict] | None = None  # cached camera device groups
 
     def get_or_create_session(
         self,
@@ -116,6 +117,34 @@ class CameraStreamCoordinator:
             session.fps = _clamp(fps, MIN_FPS, MAX_FPS)
         return True
 
+    def resolve_quality_level(
+        self,
+        hass: "HomeAssistant",
+        entity_id: str,
+        quality_level: str,
+    ) -> str | None:
+        """Resolve quality_level ('sd' or 'hd') to the correct entity_id for this device.
+
+        Caches device groups and invalidates on each call (lightweight since it's
+        just registry lookups). Returns the resolved entity_id, or None if no mapping found.
+        """
+        from .camera_devices import build_camera_device_groups
+
+        if self._device_groups is None:
+            self._device_groups = build_camera_device_groups(hass)
+
+        role_key = "hd_stream" if quality_level == "hd" else "sd_stream"
+
+        for device in self._device_groups:
+            if entity_id in device["all_entity_ids"]:
+                return device["entities"].get(role_key)
+
+        return None
+
+    def invalidate_device_groups(self) -> None:
+        """Clear cached device groups (e.g. when entities change)."""
+        self._device_groups = None
+
     def remove_session(self, watch_id: str, entity_id: str) -> None:
         """Remove a session on disconnect."""
         self._sessions.pop((watch_id, entity_id), None)
@@ -123,6 +152,7 @@ class CameraStreamCoordinator:
     def shutdown(self) -> None:
         """Clear all sessions."""
         self._sessions.clear()
+        self._device_groups = None
 
 
 def _process_frame(
@@ -341,9 +371,25 @@ class CameraViewportView(HomeAssistantView):
         if "width" in payload:
             width = int(float(payload["width"]))
 
-        # Optional source_entity_id override
+        # Optional quality_level — resolves to source_entity_id via device groups
         source_entity_id = _UNSET
-        if "source_entity_id" in payload:
+        if "quality_level" in payload:
+            ql = payload["quality_level"]
+            if ql in ("sd", "hd"):
+                resolved = coordinator.resolve_quality_level(
+                    self._hass, entity_id, ql
+                )
+                if resolved:
+                    source_entity_id = resolved if resolved != entity_id else None
+                else:
+                    # No device group mapping — clear any override
+                    source_entity_id = None
+            else:
+                return self.json_message(
+                    "quality_level must be 'sd' or 'hd'", status_code=400
+                )
+        elif "source_entity_id" in payload:
+            # Legacy: direct source_entity_id override (backwards compat)
             sid = payload["source_entity_id"]
             if sid is None:
                 source_entity_id = None  # clear back to original
