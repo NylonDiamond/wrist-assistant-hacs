@@ -208,7 +208,7 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
             # Append lens label for multi-lens cameras
             lens_name = device_name or ""
             if is_multi_lens and lens_idx > 0:
-                lens_name = f"{lens_name} (Lens {lens_idx})"
+                lens_name = f"{lens_name} ({lens_idx})"
 
             devices.append({
                 "device_id": device_id,
