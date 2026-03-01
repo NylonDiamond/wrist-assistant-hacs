@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from aiohttp.web import Request, Response
@@ -14,7 +15,7 @@ from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
-# Platform-specific suffix → role mappings (checked longest-first via sorted key length)
+# Platform-specific suffix → role mappings (checked in order, first match wins)
 _PLATFORM_RULES: dict[str, list[tuple[str, str]]] = {
     "reolink": [
         # Dual-lens telephoto snapshots
@@ -84,12 +85,18 @@ _GENERIC_RULES: list[tuple[str, str]] = [
     ("_high_resolution_channel", "hd_stream"),
 ]
 
+# Trailing _N pattern for multi-lens cameras (e.g. _fluent_2, _clear_2)
+_LENS_SUFFIX_RE = re.compile(r"^(.+)_(\d+)$")
 
-def _classify_entity_role(entity_id: str, platform: str | None) -> str | None:
+
+def _classify_entity_role(
+    entity_id: str, platform: str | None
+) -> tuple[str | None, int]:
     """Classify a camera entity's role within its device group.
 
-    Returns a role string like 'sd_stream', 'hd_stream', 'sd_snapshot', 'hd_snapshot',
-    or None if no suffix matches (single-entity device or unrecognized).
+    Returns (role, lens_index) where:
+    - role: 'sd_stream', 'hd_stream', 'sd_snapshot', 'hd_snapshot', or None
+    - lens_index: 0 for primary lens (no suffix), 2+ for additional lenses (_2, _3, etc.)
     """
     obj_id = entity_id.removeprefix("camera.")
 
@@ -97,18 +104,35 @@ def _classify_entity_role(entity_id: str, platform: str | None) -> str | None:
     if platform and platform in _PLATFORM_RULES:
         for suffix, role in _PLATFORM_RULES[platform]:
             if obj_id.endswith(suffix):
-                return role
+                return role, 0
 
     # Generic fallback
     for suffix, role in _GENERIC_RULES:
         if obj_id.endswith(suffix):
-            return role
+            return role, 0
 
-    return None
+    # Multi-lens detection: strip trailing _N (N >= 2) and re-classify.
+    # Handles Reolink Duo/TrackMix where second lens uses e.g. _fluent_2, _clear_2.
+    m = _LENS_SUFFIX_RE.match(obj_id)
+    if m:
+        lens_idx = int(m.group(2))
+        if lens_idx >= 2:
+            base_obj = m.group(1)
+            if platform and platform in _PLATFORM_RULES:
+                for suffix, role in _PLATFORM_RULES[platform]:
+                    if base_obj.endswith(suffix):
+                        return role, lens_idx
+            for suffix, role in _GENERIC_RULES:
+                if base_obj.endswith(suffix):
+                    return role, lens_idx
+
+    return None, 0
 
 
 def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Build grouped camera device list from entity and device registries.
+
+    Multi-lens cameras (e.g. Reolink Duo) are split into separate entries per lens.
 
     Returns a list of device dicts, each with:
     - device_id: str or None
@@ -116,7 +140,7 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
     - manufacturer: str or None
     - model: str or None
     - entities: dict mapping role → entity_id (e.g. {"sd_stream": "camera.x", "hd_stream": "camera.y"})
-    - all_entity_ids: list of all camera entity IDs for this device
+    - all_entity_ids: list of all camera entity IDs for this device/lens
     """
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -149,26 +173,6 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
                 manufacturer = device.manufacturer
                 model = device.model
 
-        # Classify each entity's role
-        entity_roles: dict[str, str] = {}  # role → entity_id
-        all_entity_ids: list[str] = []
-
-        for entry in entries:
-            all_entity_ids.append(entry.entity_id)
-            role = _classify_entity_role(entry.entity_id, entry.platform)
-            if role:
-                # First match wins for each role (avoid duplicates)
-                if role not in entity_roles:
-                    entity_roles[role] = entry.entity_id
-
-        # Single-entity devices: entity gets sd_stream role
-        if len(entries) == 1 and not entity_roles:
-            entity_roles["sd_stream"] = entries[0].entity_id
-
-        # Multi-entity with no matches: use first as sd_stream
-        if not entity_roles and entries:
-            entity_roles["sd_stream"] = entries[0].entity_id
-
         # Fallback name from first entity's friendly name
         if not device_name:
             first = entries[0]
@@ -178,14 +182,42 @@ def build_camera_device_groups(hass: HomeAssistant) -> list[dict[str, Any]]:
                 or first.entity_id.removeprefix("camera.").replace("_", " ").title()
             )
 
-        devices.append({
-            "device_id": device_id,
-            "name": device_name,
-            "manufacturer": manufacturer,
-            "model": model,
-            "entities": entity_roles,
-            "all_entity_ids": sorted(all_entity_ids),
-        })
+        # Classify each entity's role and lens index
+        lens_roles: dict[int, dict[str, str]] = {}   # lens → {role → entity_id}
+        lens_entities: dict[int, list[str]] = {}      # lens → [entity_ids]
+
+        for entry in entries:
+            role, lens_idx = _classify_entity_role(entry.entity_id, entry.platform)
+            lens_roles.setdefault(lens_idx, {})
+            lens_entities.setdefault(lens_idx, [])
+            lens_entities[lens_idx].append(entry.entity_id)
+            if role and role not in lens_roles[lens_idx]:
+                lens_roles[lens_idx][role] = entry.entity_id
+
+        is_multi_lens = any(idx > 0 for idx in lens_roles)
+
+        # Create one device entry per lens
+        for lens_idx in sorted(lens_roles):
+            entity_roles = lens_roles[lens_idx]
+            l_entity_ids = lens_entities.get(lens_idx, [])
+
+            # Default: if no roles matched, use first entity as sd_stream
+            if not entity_roles and l_entity_ids:
+                entity_roles["sd_stream"] = l_entity_ids[0]
+
+            # Append lens label for multi-lens cameras
+            lens_name = device_name or ""
+            if is_multi_lens and lens_idx > 0:
+                lens_name = f"{lens_name} (Lens {lens_idx})"
+
+            devices.append({
+                "device_id": device_id,
+                "name": lens_name,
+                "manufacturer": manufacturer,
+                "model": model,
+                "entities": entity_roles,
+                "all_entity_ids": sorted(l_entity_ids),
+            })
 
     # Sort by name
     devices.sort(key=lambda d: (d["name"] or "").lower())
